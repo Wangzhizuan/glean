@@ -1,65 +1,113 @@
-import Image from "next/image";
+import { Brand } from "@/components/layout/brand";
+import { Button } from "@/components/ui/button";
 
-export default function Home() {
+const surfaces = [
+  {
+    href: "/submit",
+    number: "01",
+    title: "提交链接",
+    description: "混合粘贴 1–10 条视频链接，选择需要生成的内容。",
+    action: "打开工作台 →",
+  },
+  {
+    href: "/progress",
+    number: "02",
+    title: "任务进度",
+    description: "逐条查看识别、总结与金句提炼状态，完成即查看。",
+    action: "查看任务队列 →",
+  },
+  {
+    href: "/detail",
+    number: "03",
+    title: "文案详情",
+    description: "在总结、逐字稿与金句间切换，复制整篇或单独导出。",
+    action: "查看示例文案 →",
+  },
+  {
+    href: "/history",
+    number: "04",
+    title: "历史与下载",
+    description: "筛选过往记录，勾选多条文案后批量下载保存。",
+    action: "打开资料库 →",
+  },
+];
+
+export default function HomePage() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+    <>
+      <header className="container home-header">
+        <Brand />
+        <small>视频文案提取与学习工具</small>
+      </header>
+      <main className="home-main">
+        <section className="container home-hero">
+          <div>
+            <span className="eyebrow">抖音 · Bilibili · YouTube</span>
+            <h1>让视频里的好内容，真正留下来。</h1>
+            <p className="lead">
+              批量粘贴视频链接，自动生成逐字稿、结构化总结和精彩金句。无需登录，完成后可一键复制或导出
+              TXT、Word。
+            </p>
+            <div className="hero-actions">
+              <Button href="/submit">开始提取视频文案</Button>
+              <Button href="/history" variant="secondary">
+                查看历史记录
+              </Button>
+            </div>
+          </div>
+          <div aria-label="文案提取结果预览" className="home-demo">
+            <div className="home-demo__head">
+              <b>正在提炼内容</b>
+              <span aria-label="提取流程状态" className="status-dots">
+                <i
+                  aria-label="链接已识别"
+                  data-tip="链接已识别"
+                  tabIndex={0}
+                />
+                <i
+                  aria-label="正在进行语音转写"
+                  data-tip="正在进行语音转写"
+                  tabIndex={0}
+                />
+                <i
+                  aria-label="等待提炼总结与金句"
+                  data-tip="等待提炼总结与金句"
+                  tabIndex={0}
+                />
+              </span>
+            </div>
+            <div className="home-demo__input">
+              youtube.com/watch?v=quiet-ideas
+            </div>
+            <div className="home-demo__result">
+              <small>精彩金句 · 03</small>
+              <p>“收藏只是把信息留下，转述才是把理解留下。”</p>
+            </div>
+          </div>
+        </section>
+        <section className="container surface-section">
+          <div className="surface-section__head">
+            <h2>从提交到下载，一条清晰的路径。</h2>
+            <p>
+              四个独立界面覆盖批量处理的完整流程，移动端与桌面端都能顺畅操作。
+            </p>
+          </div>
+          <div className="surface-grid">
+            {surfaces.map((surface) => (
+              <a
+                className="surface-card"
+                href={surface.href}
+                key={surface.href}
+              >
+                <span className="surface-card__number">{surface.number}</span>
+                <h3>{surface.title}</h3>
+                <p>{surface.description}</p>
+                <span>{surface.action}</span>
+              </a>
+            ))}
+          </div>
+        </section>
       </main>
-    </div>
+    </>
   );
 }

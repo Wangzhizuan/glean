@@ -1,0 +1,77 @@
+:root {
+  --color-background: #f5f4ed;
+  --color-surface: #faf9f5;
+  --color-surface-warm: #e8e6dc;
+  --color-text: #141413;
+  --color-text-secondary: #3d3d3a;
+  --color-muted: #5e5d59;
+  --color-meta: #87867f;
+  --color-border: #f0eee6;
+  --color-border-strong: #e8e6dc;
+  --color-accent: #c96442;
+  --color-accent-on: #faf9f5;
+  --color-accent-hover: color-mix(in oklab, var(--color-accent), black 8%);
+  --color-accent-active: color-mix(in oklab, var(--color-accent), black 14%);
+  --color-success: #17a34a;
+  --color-warning: #eab308;
+  --color-danger: #b53333;
+
+  --font-display: "Songti SC", "STSong", Georgia, "Times New Roman", serif;
+  --font-body: Arial, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+
+  --text-xs: 10px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 20px;
+  --text-xl: 25px;
+  --text-2xl: 32px;
+  --text-3xl: 52px;
+  --text-4xl: 64px;
+  --leading-body: 1.6;
+  --leading-tight: 1.1;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-9: 36px;
+  --space-12: 48px;
+  --space-14: 56px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-22: 88px;
+  --space-24: 96px;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-demo: 32px;
+  --radius-pill: 9999px;
+
+  --shadow-flat: none;
+  --shadow-ring: 0 0 0 1px var(--color-border);
+  --shadow-raised: rgb(0 0 0 / 5%) 0 4px 24px;
+  --shadow-focus: 0 0 0 3px rgb(56 152 236 / 30%);
+
+  --motion-fast: 150ms;
+  --motion-base: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  --container-max: 1200px;
+  --container-gutter-desktop: 24px;
+  --container-gutter-tablet: 16px;
+  --container-gutter-phone: 12px;
+}
+
+@theme inline {
+  --color-background: var(--color-background);
+  --color-foreground: var(--color-text);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
+}
