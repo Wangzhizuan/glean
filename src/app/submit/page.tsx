@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Toast, useToast } from "@/components/feedback/toast";
 import { AppShell } from "@/components/layout/app-shell";
@@ -9,14 +9,24 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CheckboxLine, Input } from "@/components/ui/form-controls";
+import { ApiError, createBatch, getCapabilities } from "@/lib/api";
+import type { Capabilities } from "@/lib/api-types";
 
 const supportedUrl =
-  /(douyin\.com|bilibili\.com|b23\.tv|youtube\.com|youtu\.be)/i;
+  /^https?:\/\/([^/]+\.)?(douyin\.com|bilibili\.com|b23\.tv|youtube\.com|youtu\.be)(\/|$)/i;
 
 export default function SubmitPage() {
   const router = useRouter();
   const [links, setLinks] = useState([""]);
+  const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const { message, showToast } = useToast();
+
+  useEffect(() => {
+    getCapabilities()
+      .then(setCapabilities)
+      .catch(() => showToast("本地后端未启动，请运行 npm run dev:all"));
+  }, [showToast]);
 
   function addLink() {
     if (links.length >= 10) {
@@ -42,7 +52,7 @@ export default function SubmitPage() {
     );
   }
 
-  function submitTask() {
+  async function submitTask() {
     const urls = links.map((link) => link.trim()).filter(Boolean);
     if (!urls.length) {
       showToast("请先粘贴至少一个视频链接");
@@ -52,9 +62,21 @@ export default function SubmitPage() {
       showToast("有链接暂不受支持，请检查平台与格式");
       return;
     }
-    sessionStorage.setItem("taskCount", String(urls.length));
-    router.push("/progress");
+
+    setSubmitting(true);
+    try {
+      const batch = await createBatch(urls);
+      localStorage.setItem("shiju:lastBatchId", batch.batchId);
+      router.push(`/progress?batchId=${encodeURIComponent(batch.batchId)}`);
+    } catch (error) {
+      showToast(
+        error instanceof ApiError ? error.message : "创建任务失败，请检查本地服务",
+      );
+      setSubmitting(false);
+    }
   }
+
+  const isDemo = capabilities?.processorMode === "demo";
 
   return (
     <AppShell
@@ -66,11 +88,25 @@ export default function SubmitPage() {
     >
       <section className="container">
         <PageHero
-          action={<Badge tone="success">无需登录 · 即开即用</Badge>}
-          description="粘贴 1–10 条抖音、Bilibili 或 YouTube 链接。我们会逐条生成逐字稿、结构化总结与精彩金句。"
+          action={
+            <Badge tone={capabilities ? "success" : "warning"}>
+              {capabilities
+                ? "无需注册账号 · 内容保存在本机"
+                : "正在连接本地服务"}
+            </Badge>
+          }
+          description="粘贴 1–10 条抖音、Bilibili 或 YouTube 链接。任务和生成结果会保存到当前 Mac 本机。"
           eyebrow="从视频到可用文字"
           title="把值得反复看的视频，变成随时可用的文案。"
         />
+        {isDemo && (
+          <div className="system-notice system-notice--warning">
+            <b>当前为演示处理模式</b>
+            <span>
+              任务、进度、历史、详情和导出均可完整运行，但不会下载或识别链接中的真实视频。
+            </span>
+          </div>
+        )}
         <div className="grid grid--content-sidebar">
           <Card as="article" className="stack" panel>
             <div className="row row--between">
@@ -107,13 +143,18 @@ export default function SubmitPage() {
               ))}
             </div>
             <div className="hint">
-              私密、已删除或需要付费观看的视频可能无法读取。长视频会自动分段处理，不影响最终合并导出。
+              私密、已删除、付费或需要平台权限的视频不会被绕过限制。真实处理模式下，长视频会自动分段。
             </div>
             <div className="row row--between row--mobile-stack">
               <span className="meta">
-                提交后可离开页面，任务会在浏览器中继续显示进度。
+                任务由本地 SQLite 保存，关闭页面后仍可恢复查看。
               </span>
-              <Button onClick={submitTask}>开始提取文案</Button>
+              <Button
+                disabled={submitting || !capabilities}
+                onClick={submitTask}
+              >
+                {submitting ? "正在创建任务..." : "开始提取文案"}
+              </Button>
             </div>
           </Card>
           <aside className="stack">
@@ -124,26 +165,45 @@ export default function SubmitPage() {
               <CheckboxLine>精彩金句提炼</CheckboxLine>
             </Card>
             <Card as="article" className="stack" panel>
-              <h3>支持平台</h3>
-              <div className="platform-grid">
-                <div className="platform-card">
-                  <b>抖音</b>
-                  <span>短视频与公开作品</span>
-                </div>
-                <div className="platform-card">
-                  <b>Bilibili</b>
-                  <span>单集与公开视频</span>
-                </div>
-                <div className="platform-card">
-                  <b>YouTube</b>
-                  <span>公开视频与字幕</span>
-                </div>
-              </div>
+              <h3>本机能力</h3>
+              <CapabilityLine
+                available={capabilities?.dependencies.ytDlp.available}
+                label="yt-dlp 视频解析"
+              />
+              <CapabilityLine
+                available={capabilities?.dependencies.ffmpeg.available}
+                label="FFmpeg 音频处理"
+              />
+              <CapabilityLine
+                available={capabilities?.dependencies.mlxWhisper.available}
+                label="mlx-whisper 本地转写"
+              />
+              <CapabilityLine
+                available={capabilities?.dependencies.ollama.available}
+                label="Ollama 本地总结"
+              />
             </Card>
           </aside>
         </div>
       </section>
       <Toast message={message} />
     </AppShell>
+  );
+}
+
+function CapabilityLine({
+  available,
+  label,
+}: {
+  available: boolean | undefined;
+  label: string;
+}) {
+  return (
+    <div className="row row--between capability-line">
+      <span>{label}</span>
+      <span className={available ? "capability-ready" : "capability-missing"}>
+        {available ? "已就绪" : "未安装"}
+      </span>
+    </div>
   );
 }

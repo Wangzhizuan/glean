@@ -34,6 +34,11 @@ src/
     design-system.css        # 颜色、字体、间距、圆角、阴影、动效令牌
     components.css           # 通用组件样式
     pages.css                # 页面布局与业务模式样式
+backend/
+  app/main.py                # FastAPI、SQLite、Worker、SSE 与导出
+  requirements.txt           # Python 依赖
+scripts/
+  dev.sh                     # 同时启动前后端
 ```
 
 ## 设计系统架构
@@ -63,3 +68,7 @@ src/
 - 不引入在线字体或构建期网络资源。展示字体使用本地系统衬线字体回退栈，以保证离线构建。
 - 修改视觉规范时，先更新设计令牌或共享组件，再检查所有页面和 `/design-system`。
 - 提交前至少运行 `npm run lint` 和 `npm run build`。
+- 本地完整开发使用 `npm run dev:all`，不要只启动 Next.js 后误判 API 不可用。
+- 前端统一通过 `src/lib/api.ts` 调用 `127.0.0.1:8787/api`，可用 `NEXT_PUBLIC_SHIJU_API_URL` 覆盖；`/local-api` rewrite 保留给同源部署场景。
+- 后端 schema、状态机和 API 字段需与 `docs/local-video-copy-backend-technical-design.md` 保持一致。
+- 当前默认 `SHIJU_PROCESSOR_MODE=demo`。真实媒体处理必须继续实现 `backend/app/main.py` 中的 `TODO(real-processing)`，不得将演示结果描述为真实识别结果。

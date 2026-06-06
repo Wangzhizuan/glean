@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 拾句
 
-## Getting Started
+本地视频文案提取工具。前端使用 Next.js，后端使用 FastAPI + SQLite。
 
-First, run the development server:
+## 启动
+
+首次运行先安装后端依赖：
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+python3 -m venv .venv
+.venv/bin/pip install -r backend/requirements.txt
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+同时启动 Next.js 和 FastAPI：
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run dev:all
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+打开 [http://localhost:3000](http://localhost:3000)。
 
-## Learn More
+## 当前处理模式
 
-To learn more about Next.js, take a look at the following resources:
+默认使用 `demo` 处理器，可以完整跑通：
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- 批量创建任务
+- SQLite 持久化
+- SSE 实时进度
+- 暂停、继续、取消
+- 历史记录和详情
+- TXT、SRT、Markdown、JSON 导出
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+演示处理器不会下载或识别真实视频。真实处理还需要安装并接入：
 
-## Deploy on Vercel
+- FFmpeg
+- yt-dlp
+- mlx-whisper
+- Ollama
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+代码入口和 TODO 位于 `backend/app/main.py` 的 `Worker.process`。
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 单独启动
+
+```bash
+npm run backend
+npm run dev
+```
+
+后端仅监听 `127.0.0.1:8787`，运行数据默认保存在 `.data/shiju.db`。
+
+前端默认连接 `http://127.0.0.1:8787/api`。可通过
+`NEXT_PUBLIC_SHIJU_API_URL` 覆盖后端地址。
