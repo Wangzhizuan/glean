@@ -167,7 +167,9 @@ class OutputOptions(BaseModel):
 
 
 class ProcessingOptions(BaseModel):
-    language: str = "zh"
+    language: str = "auto"
+    sourceLanguage: str = "auto"
+    outputLanguage: str = "zh"
     subtitlePolicy: str = "prefer_platform"
     asrModel: str = "large-v3-turbo"
     useBrowserCookies: bool = False
@@ -199,6 +201,30 @@ def identify_platform(raw_url: str) -> str:
 def dependency_status(command: str) -> Dict[str, Any]:
     path = shutil.which(command)
     return {"available": bool(path), "path": path}
+
+
+def mlx_whisper_status() -> Dict[str, Any]:
+    """Detect whether the mlx_whisper Python module is importable and whether
+    the default ASR model is already cached locally."""
+    import importlib.util
+
+    available = importlib.util.find_spec("mlx_whisper") is not None
+    model_ready = False
+    if available:
+        model_dir = (
+            Path.home()
+            / ".cache/huggingface/hub/models--mlx-community--whisper-large-v3-turbo"
+        )
+        model_ready = model_dir.exists()
+    return {"available": available, "modelReady": model_ready}
+
+
+def ollama_status() -> Dict[str, Any]:
+    """Detect Ollama by pinging its local HTTP API rather than relying on a CLI
+    binary on PATH (the official .app does not install a `ollama` shim)."""
+    from .pipeline import _check_ollama_available
+
+    return {"available": _check_ollama_available()}
 
 
 def task_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
@@ -259,7 +285,9 @@ def update_batch_counts(connection: sqlite3.Connection, batch_id: str) -> None:
 
 
 DEMO_CONTENT = {
-    "overview": "这段视频讨论了如何把零散的信息输入转化为可长期积累、能够在真实任务中调用的个人知识系统。核心不是收藏更多，而是带着问题输入、用自己的语言压缩，并在输出中反复调用。",
+    "overview": "这段视频系统讨论了如何把零散的信息输入转化为可长期积累、能够在真实任务中调用的个人知识系统。内容从无目标收藏的问题出发，解释了问题驱动输入、主动转述和真实调用三者之间的关系。视频强调，知识管理的核心不是工具或收藏数量，而是能否形成从问题到行动的闭环。最终目标是让笔记成为写作、决策和沟通时可以复用的思考资产。",
+    "coreThesis": "个人知识系统的价值不在于存储更多资料，而在于围绕真实问题完成输入、理解、压缩和调用的循环，并让每一次输入最终影响行动。",
+    "detailedSummary": "视频首先指出，许多人每天接触大量信息，却很少真正留下可调用的理解，原因通常不是输入不足，而是输入前没有明确问题。没有问题约束的收藏会不断堆积，最终形成缺少索引和使用场景的资料仓库。随后，视频提出主动转述是从保存信息到理解信息的关键步骤：看完内容后，应当用自己的语言写出结论、依据以及它可能改变的行动。最后，视频将知识系统放回真实任务中检验，强调笔记只有在文章、方案、讨论和决策中被再次调用，才会真正转化为能力。整套方法可以概括为问题、输入、转述、调用四个连续环节。",
     "keyPoints": [
         {
             "title": "先提出问题，再开始输入",
@@ -273,11 +301,49 @@ DEMO_CONTENT = {
             "title": "让笔记进入真实任务",
             "content": "知识需要在写作、决策或讨论中被调用，才能转化为能力。",
         },
+        {
+            "title": "收藏不等于理解",
+            "content": "资料数量只代表保存行为，只有经过筛选、转述和关联，信息才会变成个人理解。",
+        },
+        {
+            "title": "建立最小学习闭环",
+            "content": "从问题出发，完成输入、转述和调用，比搭建复杂工具体系更重要。",
+        },
+        {
+            "title": "用输出检验输入质量",
+            "content": "能否在文章、方案或讨论中复用一个观点，是判断输入是否真正有效的标准。",
+        },
+    ],
+    "contentStructure": [
+        {"section": "问题提出", "summary": "解释信息摄入很多但有效积累很少的常见困境。"},
+        {"section": "问题驱动输入", "summary": "说明先确定问题如何减少无效收藏。"},
+        {"section": "主动转述", "summary": "介绍用自己的语言压缩结论、依据和行动的方法。"},
+        {"section": "真实任务调用", "summary": "讨论笔记如何在写作、决策和沟通中转化为能力。"},
+        {"section": "闭环总结", "summary": "将方法归纳为问题、输入、转述和调用四个环节。"},
     ],
     "actionItems": [
         "选择一个本周正在解决的问题",
         "每天只收集三条直接相关的材料",
         "周末整理成一页主题笔记并在输出中引用",
+        "每次收藏前写下这条信息要解决的具体问题",
+        "看完内容后用三句话记录结论、依据和下一步行动",
+        "每周删除或归档没有明确使用场景的收藏",
+    ],
+    "targetAudience": [
+        "收藏很多资料但很少回看的知识工作者",
+        "希望改善阅读、学习和笔记流程的内容创作者",
+        "需要在写作、方案和决策中快速调用资料的人",
+    ],
+    "terms": [
+        {"term": "问题驱动输入", "explanation": "先明确需要解决的问题，再有选择地获取信息。"},
+        {"term": "主动转述", "explanation": "不用原文摘抄代替理解，而是用自己的语言重新表达。"},
+        {"term": "知识调用", "explanation": "在真实任务中找到并使用过去积累的观点和材料。"},
+    ],
+    "conclusions": [
+        "收藏数量不能代表知识积累质量。",
+        "转述是信息从外部资料变成个人理解的关键步骤。",
+        "知识只有进入真实行动和输出，才能转化为长期能力。",
+        "简单而持续的闭环优于复杂但不使用的工具系统。",
     ],
 }
 
@@ -346,6 +412,83 @@ def build_demo_result(task: sqlite3.Row) -> Dict[str, Any]:
                 "startMs": 14000,
                 "endMs": 42000,
                 "sourceSegmentIds": [1],
+                "isPolished": True,
+            },
+            {
+                "text": "输入之前没有问题，输入之后通常也不会留下答案。",
+                "startMs": 14000,
+                "endMs": 42000,
+                "sourceSegmentIds": [1],
+                "isPolished": True,
+            },
+            {
+                "text": "收藏夹更像没有索引的仓库，而不是已经掌握的知识。",
+                "startMs": 42000,
+                "endMs": 76000,
+                "sourceSegmentIds": [2],
+                "isPolished": True,
+            },
+            {
+                "text": "摘抄完成的是保存，转述完成的才是理解。",
+                "startMs": 76000,
+                "endMs": 112000,
+                "sourceSegmentIds": [3],
+                "isPolished": True,
+            },
+            {
+                "text": "每次输入都应该回答三个问题：结论是什么，依据是什么，行动会怎样改变。",
+                "startMs": 76000,
+                "endMs": 112000,
+                "sourceSegmentIds": [3],
+                "isPolished": True,
+            },
+            {
+                "text": "笔记不是为了看起来完整，而是为了需要时能够被找到。",
+                "startMs": 112000,
+                "endMs": 146000,
+                "sourceSegmentIds": [4],
+                "isPolished": True,
+            },
+            {
+                "text": "知识系统最终要接受真实任务的检验。",
+                "startMs": 112000,
+                "endMs": 146000,
+                "sourceSegmentIds": [4],
+                "isPolished": True,
+            },
+            {
+                "text": "能在写作、决策和讨论中被调用的内容，才真正属于你。",
+                "startMs": 112000,
+                "endMs": 146000,
+                "sourceSegmentIds": [4],
+                "isPolished": True,
+            },
+            {
+                "text": "工具不会自动形成知识，循环才会。",
+                "startMs": 146000,
+                "endMs": 178000,
+                "sourceSegmentIds": [5],
+                "isPolished": True,
+            },
+            {
+                "text": "最小的学习闭环，是让一个观点改变下一次行动。",
+                "startMs": 146000,
+                "endMs": 178000,
+                "sourceSegmentIds": [5],
+                "isPolished": True,
+            },
+            {
+                "text": "问题决定输入的方向，调用决定积累的价值。",
+                "startMs": 146000,
+                "endMs": 178000,
+                "sourceSegmentIds": [5],
+                "isPolished": True,
+            },
+            {
+                "text": "简单但持续运行的系统，胜过复杂却从不使用的系统。",
+                "startMs": 146000,
+                "endMs": 178000,
+                "sourceSegmentIds": [5],
                 "isPolished": True,
             },
         ],
@@ -487,8 +630,14 @@ class Worker:
         if pipeline_result.summary:
             summary_data = {
                 "overview": pipeline_result.summary.overview,
+                "coreThesis": pipeline_result.summary.core_thesis,
+                "detailedSummary": pipeline_result.summary.detailed_summary,
                 "keyPoints": pipeline_result.summary.key_points,
+                "contentStructure": pipeline_result.summary.content_structure,
                 "actionItems": pipeline_result.summary.action_items,
+                "targetAudience": pipeline_result.summary.target_audience,
+                "terms": pipeline_result.summary.terms,
+                "conclusions": pipeline_result.summary.conclusions,
             }
         quotes_data = [
             {
@@ -559,7 +708,7 @@ class Worker:
                     """
                     INSERT INTO generated_contents(id, task_id, type, model, prompt_version,
                       content_json, created_at)
-                    VALUES (?, ?, 'summary', ?, 'v1', ?, ?)
+                    VALUES (?, ?, 'summary', ?, 'v2-rich-zh', ?, ?)
                     """,
                     (
                         make_id("gc"),
@@ -574,7 +723,7 @@ class Worker:
                     """
                     INSERT INTO generated_contents(id, task_id, type, model, prompt_version,
                       content_json, created_at)
-                    VALUES (?, ?, 'quotes', ?, 'v1', ?, ?)
+                    VALUES (?, ?, 'quotes', ?, 'v2-12-plus-zh', ?, ?)
                     """,
                     (
                         make_id("gc"),
@@ -716,8 +865,8 @@ def capabilities() -> Dict[str, Any]:
     dependencies = {
         "ffmpeg": dependency_status("ffmpeg"),
         "ytDlp": dependency_status("yt-dlp"),
-        "mlxWhisper": {"available": False, "modelReady": False},
-        "ollama": dependency_status("ollama"),
+        "mlxWhisper": mlx_whisper_status(),
+        "ollama": ollama_status(),
     }
     real_ready = all(
         [
@@ -910,6 +1059,13 @@ def build_export(result: Dict[str, Any], export_format: str) -> tuple[str, str, 
     transcript = result["transcript"]
     summary = result["summary"]
     quotes = result["quotes"]
+    core_thesis = summary.get("coreThesis")
+    detailed_summary = summary.get("detailedSummary")
+    content_structure = summary.get("contentStructure", [])
+    action_items = summary.get("actionItems", [])
+    terms = summary.get("terms", [])
+    conclusions = summary.get("conclusions", [])
+    target_audience = summary.get("targetAudience", [])
     safe_name = "".join(character for character in title if character not in '/\\:*?"<>|')[:80]
     if export_format == "json":
         return f"{safe_name}.json", "application/json", json.dumps(result, ensure_ascii=False, indent=2)
@@ -926,19 +1082,70 @@ def build_export(result: Dict[str, Any], export_format: str) -> tuple[str, str, 
             f"- **{point['title']}**：{point['content']}" for point in summary["keyPoints"]
         )
         quote_lines = "\n".join(f"> {quote['text']}" for quote in quotes)
-        content = (
-            f"# {title}\n\n## 内容总结\n\n{summary['overview']}\n\n"
-            f"## 关键观点\n\n{points}\n\n## 精彩金句\n\n{quote_lines}\n\n"
-            f"## 逐字稿\n\n{transcript['plainText']}\n"
-        )
+        sections = [
+            f"# {title}",
+            f"## 内容总结\n\n{summary['overview']}",
+            f"## 核心主张\n\n{core_thesis}" if core_thesis else "",
+            f"## 详细总结\n\n{detailed_summary}" if detailed_summary else "",
+            f"## 关键观点\n\n{points}",
+            "## 内容结构\n\n"
+            + "\n".join(
+                f"- **{item['section']}**：{item['summary']}" for item in content_structure
+            )
+            if content_structure
+            else "",
+            "## 行动建议\n\n" + "\n".join(f"- {item}" for item in action_items)
+            if action_items
+            else "",
+            "## 关键术语\n\n"
+            + "\n".join(f"- **{item['term']}**：{item['explanation']}" for item in terms)
+            if terms
+            else "",
+            "## 主要结论\n\n" + "\n".join(f"- {item}" for item in conclusions)
+            if conclusions
+            else "",
+            "## 适合人群\n\n" + "\n".join(f"- {item}" for item in target_audience)
+            if target_audience
+            else "",
+            f"## 精彩金句\n\n{quote_lines}",
+            f"## 逐字稿\n\n{transcript['plainText']}",
+        ]
+        content = "\n\n".join(section for section in sections if section) + "\n"
         return f"{safe_name}.md", "text/markdown; charset=utf-8", content
     # TODO(export): add a real DOCX artifact using python-docx after the core
     # local media pipeline is available.
-    content = (
-        f"{title}\n\n内容总结\n{summary['overview']}\n\n精彩金句\n"
-        + "\n".join(f"- {quote['text']}" for quote in quotes)
-        + f"\n\n逐字稿\n{transcript['plainText']}\n"
-    )
+    sections = [
+        title,
+        f"内容总结\n{summary['overview']}",
+        f"核心主张\n{core_thesis}" if core_thesis else "",
+        f"详细总结\n{detailed_summary}" if detailed_summary else "",
+        "关键观点\n"
+        + "\n".join(
+            f"- {point['title']}：{point['content']}" for point in summary["keyPoints"]
+        ),
+        "内容结构\n"
+        + "\n".join(
+            f"- {item['section']}：{item['summary']}" for item in content_structure
+        )
+        if content_structure
+        else "",
+        "行动建议\n" + "\n".join(f"- {item}" for item in action_items)
+        if action_items
+        else "",
+        "关键术语\n"
+        + "\n".join(f"- {item['term']}：{item['explanation']}" for item in terms)
+        if terms
+        else "",
+        "主要结论\n" + "\n".join(f"- {item}" for item in conclusions)
+        if conclusions
+        else "",
+        "适合人群\n" + "\n".join(f"- {item}" for item in target_audience)
+        if target_audience
+        else "",
+        "精彩金句\n" + "\n".join(f"- {quote['text']}" for quote in quotes),
+        f"逐字稿\n{transcript['plainText']}",
+    ]
+    content = "\n\n".join(section for section in sections if section) + "\n"
     return f"{safe_name}.txt", "text/plain; charset=utf-8", content
 
 

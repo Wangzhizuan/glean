@@ -32,8 +32,6 @@ export default function ProgressPage() {
 
 function ProgressContent() {
   const searchParams = useSearchParams();
-  const [batch, setBatch] = useState<Batch | null>(null);
-  const [loading, setLoading] = useState(true);
   const { message, showToast } = useToast();
   const queryBatchId = searchParams.get("batchId");
   const batchId =
@@ -41,12 +39,11 @@ function ProgressContent() {
     (typeof window !== "undefined"
       ? localStorage.getItem("shiju:lastBatchId")
       : null);
+  const [batch, setBatch] = useState<Batch | null>(null);
+  const [loading, setLoading] = useState(Boolean(batchId));
 
   const loadBatch = useCallback(async () => {
-    if (!batchId) {
-      setLoading(false);
-      return;
-    }
+    if (!batchId) return;
     try {
       setBatch(await getBatch(batchId));
     } catch {
@@ -199,6 +196,14 @@ function TaskRow({
             <p className="meta">
               {platformLabels[task.platform]} · {formatDuration(task.durationMs)}
             </p>
+            <a
+              className="source-link"
+              href={task.canonicalUrl || task.sourceUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              打开原视频 ↗
+            </a>
           </div>
         </div>
         <Badge tone={cancelled ? "neutral" : badgeTone}>

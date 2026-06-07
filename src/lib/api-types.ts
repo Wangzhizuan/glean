@@ -96,8 +96,14 @@ export interface TaskResult {
   };
   summary: {
     overview: string;
+    coreThesis?: string;
+    detailedSummary?: string;
     keyPoints: Array<{ title: string; content: string }>;
+    contentStructure?: Array<{ section: string; summary: string }>;
     actionItems: string[];
+    targetAudience?: string[];
+    terms?: Array<{ term: string; explanation: string }>;
+    conclusions?: string[];
   };
   quotes: Array<{
     text: string;

@@ -2,6 +2,7 @@ import type {
   InputHTMLAttributes,
   ReactNode,
   SelectHTMLAttributes,
+  TextareaHTMLAttributes,
 } from "react";
 import { cx } from "@/lib/class-names";
 
@@ -22,6 +23,13 @@ export function Select({
       {children}
     </select>
   );
+}
+
+export function Textarea({
+  className,
+  ...props
+}: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea className={cx("input textarea", className)} {...props} />;
 }
 
 export function CheckboxLine({

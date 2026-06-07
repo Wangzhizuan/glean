@@ -166,6 +166,14 @@ export default function HistoryPage() {
                       <div className="meta">
                         {formatDuration(record.durationMs)}
                       </div>
+                      <a
+                        className="source-link"
+                        href={record.canonicalUrl || record.sourceUrl}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        打开原视频 ↗
+                      </a>
                     </td>
                     <td>{platformLabels[record.platform]}</td>
                     <td className="mono">{formatDateTime(record.createdAt)}</td>

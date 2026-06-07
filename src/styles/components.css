@@ -196,6 +196,12 @@
   color: var(--color-meta);
 }
 
+.textarea {
+  min-height: 68px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
 .hint {
   padding: var(--space-4);
   color: var(--color-muted);

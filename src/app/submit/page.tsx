@@ -8,12 +8,15 @@ import { PageHero } from "@/components/layout/page-hero";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { CheckboxLine, Input } from "@/components/ui/form-controls";
+import { CheckboxLine, Textarea } from "@/components/ui/form-controls";
 import { ApiError, createBatch, getCapabilities } from "@/lib/api";
 import type { Capabilities } from "@/lib/api-types";
-
-const supportedUrl =
-  /^https?:\/\/([^/]+\.)?(douyin\.com|bilibili\.com|b23\.tv|youtube\.com|youtu\.be)(\/|$)/i;
+import {
+  detectVideoPlatform,
+  extractSupportedVideoUrls,
+  getSingleVideoUrl,
+} from "@/lib/video-url";
+import { platformLabels } from "@/lib/format";
 
 export default function SubmitPage() {
   const router = useRouter();
@@ -37,6 +40,15 @@ export default function SubmitPage() {
   }
 
   function updateLink(index: number, value: string) {
+    const extracted = extractSupportedVideoUrls(value);
+    if (extracted.length > 1) {
+      setLinks((current) => {
+        const retained = current.filter((_, linkIndex) => linkIndex !== index);
+        return [...retained, ...extracted].slice(0, 10);
+      });
+      showToast(`已从文本中识别并拆分 ${Math.min(extracted.length, 10)} 条视频链接`);
+      return;
+    }
     setLinks((current) =>
       current.map((link, linkIndex) => (linkIndex === index ? value : link)),
     );
@@ -53,13 +65,19 @@ export default function SubmitPage() {
   }
 
   async function submitTask() {
-    const urls = links.map((link) => link.trim()).filter(Boolean);
+    const urls = Array.from(
+      new Set(
+        links
+          .flatMap((value) => extractSupportedVideoUrls(value))
+          .filter(Boolean),
+      ),
+    );
     if (!urls.length) {
       showToast("请先粘贴至少一个视频链接");
       return;
     }
-    if (urls.some((url) => !supportedUrl.test(url))) {
-      showToast("有链接暂不受支持，请检查平台与格式");
+    if (links.some((value) => value.trim() && !getSingleVideoUrl(value))) {
+      showToast("有输入未识别到唯一的支持链接，请检查后再提交");
       return;
     }
 
@@ -112,7 +130,9 @@ export default function SubmitPage() {
             <div className="row row--between">
               <div>
                 <h3>视频链接</h3>
-                <p className="meta">支持混合平台批量提交，最多 10 条</p>
+                <p className="meta">
+                  可直接粘贴链接或包含链接的分享文案，最多 10 条
+                </p>
               </div>
               <Button onClick={addLink} variant="secondary">
                 ＋ 添加链接
@@ -124,14 +144,17 @@ export default function SubmitPage() {
                   <span className="link-index">
                     {String(index + 1).padStart(2, "0")}
                   </span>
-                  <Input
+                  <div className="link-input-wrap">
+                    <Textarea
                     aria-label={`第 ${index + 1} 个视频链接`}
                     autoFocus={index === links.length - 1 && index > 0}
                     onChange={(event) => updateLink(index, event.target.value)}
-                    placeholder="粘贴抖音、Bilibili 或 YouTube 视频链接"
-                    type="url"
+                    placeholder="粘贴视频链接，或包含链接的整段分享文案"
+                    rows={2}
                     value={link}
-                  />
+                    />
+                    <LinkDetection value={link} />
+                  </div>
                   <Button
                     className="link-row__remove"
                     onClick={() => removeLink(index)}
@@ -188,6 +211,33 @@ export default function SubmitPage() {
       </section>
       <Toast message={message} />
     </AppShell>
+  );
+}
+
+function LinkDetection({ value }: { value: string }) {
+  if (!value.trim()) {
+    return <span className="link-detection meta">等待识别平台</span>;
+  }
+  const urls = extractSupportedVideoUrls(value);
+  if (!urls.length) {
+    return (
+      <span className="link-detection link-detection--error">
+        未识别到支持的视频链接
+      </span>
+    );
+  }
+  if (urls.length > 1) {
+    return (
+      <span className="link-detection link-detection--success">
+        已识别 {urls.length} 条支持链接，将自动拆分
+      </span>
+    );
+  }
+  const platform = detectVideoPlatform(urls[0]);
+  return (
+    <span className="link-detection link-detection--success">
+      已识别：{platform ? platformLabels[platform] : "支持平台"}
+    </span>
   );
 }
 

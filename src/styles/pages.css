@@ -333,6 +333,24 @@
   font: 12px var(--font-mono);
 }
 
+.link-input-wrap {
+  min-width: 0;
+}
+
+.link-detection {
+  margin-top: 5px;
+  display: block;
+  font-size: 12px;
+}
+
+.link-detection--success {
+  color: var(--color-success);
+}
+
+.link-detection--error {
+  color: var(--color-danger);
+}
+
 .platform-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -400,6 +418,26 @@
   font-size: var(--text-sm);
 }
 
+.source-link {
+  margin-top: 3px;
+  display: inline-flex;
+  color: var(--color-accent);
+  font-size: 12px;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--color-accent), transparent 55%);
+  text-underline-offset: 3px;
+}
+
+.source-link:hover {
+  color: var(--color-accent-hover);
+  text-decoration-color: currentColor;
+}
+
+.source-link--detail {
+  margin: calc(var(--space-4) * -1) 0 var(--space-4);
+  font-size: var(--text-sm);
+}
+
 .detail-card {
   margin-top: 18px;
 }
@@ -452,6 +490,52 @@
 
 .action-list li + li {
   margin-top: var(--space-2);
+}
+
+.summary-thesis {
+  padding: var(--space-5);
+  color: var(--color-accent-on);
+  background: var(--color-text);
+  border-radius: var(--radius-md);
+  font: 500 20px/1.55 var(--font-display);
+}
+
+.detailed-summary {
+  white-space: pre-line;
+}
+
+.content-structure {
+  border-top: 1px solid var(--color-border-strong);
+}
+
+.content-structure__item {
+  padding: var(--space-4) 0;
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  gap: var(--space-3);
+  border-bottom: 1px solid var(--color-border-strong);
+}
+
+.content-structure__item > span {
+  color: var(--color-accent);
+  font-size: 12px;
+}
+
+.content-structure__item p {
+  margin-top: var(--space-1);
+  color: var(--color-muted);
+}
+
+.terms-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.audience-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .history-toolbar {
@@ -600,6 +684,10 @@
 
   .task__header {
     align-items: flex-start;
+  }
+
+  .terms-grid {
+    grid-template-columns: 1fr;
   }
 }
 

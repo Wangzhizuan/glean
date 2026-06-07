@@ -57,7 +57,9 @@ export function createBatch(urls: string[]) {
       urls,
       outputs: { transcript: true, summary: true, quotes: true },
       options: {
-        language: "zh",
+        language: "auto",
+        sourceLanguage: "auto",
+        outputLanguage: "zh",
         subtitlePolicy: "prefer_platform",
         asrModel: "large-v3-turbo",
         useBrowserCookies: false,

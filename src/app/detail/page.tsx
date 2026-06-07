@@ -55,6 +55,12 @@ function DetailContent() {
       "",
       "内容总结",
       result.summary.overview,
+      result.summary.coreThesis
+        ? `\n核心论点\n${result.summary.coreThesis}`
+        : "",
+      result.summary.detailedSummary
+        ? `\n详细总结\n${result.summary.detailedSummary}`
+        : "",
       "",
       "精彩金句",
       ...result.quotes.map((quote) => `- ${quote.text}`),
@@ -140,6 +146,14 @@ function DetailContent() {
             <span>{result.processor.notice}</span>
           </div>
         )}
+        <a
+          className="source-link source-link--detail"
+          href={result.metadata.sourceUrl}
+          rel="noreferrer"
+          target="_blank"
+        >
+          查看原视频 ↗
+        </a>
         <div aria-label="文案内容类型" className="tabs" role="tablist">
           {tabs.map((tab) => (
             <button
@@ -159,6 +173,22 @@ function DetailContent() {
             <div className="detail-content stack">
               <h3>内容总结</h3>
               <p>{result.summary.overview}</p>
+              {result.summary.coreThesis && (
+                <>
+                  <h3>核心论点</h3>
+                  <div className="summary-thesis">
+                    {result.summary.coreThesis}
+                  </div>
+                </>
+              )}
+              {result.summary.detailedSummary && (
+                <>
+                  <h3>详细总结</h3>
+                  <p className="detailed-summary">
+                    {result.summary.detailedSummary}
+                  </p>
+                </>
+              )}
               <h3>关键观点</h3>
               <div className="stack">
                 {result.summary.keyPoints.map((point, index) => (
@@ -171,12 +201,66 @@ function DetailContent() {
                   </div>
                 ))}
               </div>
+              {Boolean(result.summary.contentStructure?.length) && (
+                <>
+                  <h3>内容结构</h3>
+                  <div className="content-structure">
+                    {result.summary.contentStructure?.map((section, index) => (
+                      <div className="content-structure__item" key={`${section.section}-${index}`}>
+                        <span className="mono">
+                          {String(index + 1).padStart(2, "0")}
+                        </span>
+                        <div>
+                          <b>{section.section}</b>
+                          <p>{section.summary}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              {Boolean(result.summary.conclusions?.length) && (
+                <>
+                  <h3>核心结论</h3>
+                  <ul className="action-list">
+                    {result.summary.conclusions?.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
               <h3>可执行清单</h3>
               <ul className="action-list">
                 {result.summary.actionItems.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
               </ul>
+              {Boolean(result.summary.terms?.length) && (
+                <>
+                  <h3>重要术语</h3>
+                  <div className="terms-grid">
+                    {result.summary.terms?.map((item) => (
+                      <div className="hint" key={item.term}>
+                        <b>{item.term}</b>
+                        <br />
+                        {item.explanation}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              {Boolean(result.summary.targetAudience?.length) && (
+                <>
+                  <h3>适合谁看</h3>
+                  <div className="audience-list">
+                    {result.summary.targetAudience?.map((item) => (
+                      <span className="badge" key={item}>
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
           {activeTab === "transcript" && (
