@@ -4,6 +4,10 @@ export const platformLabels: Record<Platform, string> = {
   bilibili: "Bilibili",
   youtube: "YouTube",
   douyin: "抖音",
+  wechat: "微信公众号",
+  xiaohongshu: "小红书",
+  feishu: "飞书文档",
+  web: "网页文章",
 };
 
 export const statusLabels: Record<TaskStatus, string> = {
@@ -15,6 +19,8 @@ export const statusLabels: Record<TaskStatus, string> = {
   transcribing: "正在识别语音",
   normalizing: "正在整理逐字稿",
   summarizing: "正在生成总结",
+  fetching: "正在抓取页面",
+  extracting: "正在提取正文",
   completed: "已完成",
   paused: "已暂停",
   cancelled: "已取消",

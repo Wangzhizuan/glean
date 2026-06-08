@@ -117,13 +117,50 @@ def check_dependencies() -> Dict[str, bool]:
 # ---------------------------------------------------------------------------
 
 
-def _run_ytdlp(args: List[str], timeout: int = 120) -> subprocess.CompletedProcess:
+def _is_youtube_url(url: str) -> bool:
+    return bool(re.search(r"(?:youtube\.com|youtu\.be)", url, re.IGNORECASE))
+
+
+def _has_deno() -> bool:
+    """Detect if a JS runtime usable by yt-dlp's EJS solver is available."""
+    return shutil.which("deno") is not None
+
+
+def _youtube_extractor_args() -> List[str]:
+    """Workaround for YouTube n-sig JavaScript challenge.
+
+    Strategy:
+    - If Deno is installed, the default web client can solve the n-sig
+      challenge, so we don't override the player_client.
+    - Otherwise we fall back to alternative player clients that don't
+      require JS solving. tv_simply now needs a GVS PO Token, so we
+      prefer android/web_safari which still return progressive audio.
+    """
+    if _has_deno():
+        return []
+    return [
+        "--extractor-args",
+        "youtube:player_client=android,web_safari,mweb;skip=hls,dash",
+    ]
+
+
+def _run_ytdlp(args: List[str], timeout: int = 120, url: Optional[str] = None) -> subprocess.CompletedProcess:
     """Run yt-dlp with given args, raise on failure."""
     # Use python3 -m yt_dlp to ensure we use the same Python env as the backend,
     # avoiding SSL/urllib3 incompatibility with older Python user-site installs.
     import sys
-    cookie_args = ["--cookies-from-browser", COOKIES_FROM_BROWSER] if COOKIES_FROM_BROWSER else []
-    cmd = [sys.executable, "-m", "yt_dlp"] + cookie_args + args
+    target_url = url or (args[-1] if args else "")
+    is_youtube = _is_youtube_url(target_url)
+    # YouTube alt player clients (tv_simply/ios/mweb) don't accept browser cookies
+    # and would otherwise be skipped, falling back to the broken web client.
+    # Drop cookies for YouTube; keep them for Bilibili/Douyin which need them.
+    cookie_args = (
+        []
+        if is_youtube
+        else (["--cookies-from-browser", COOKIES_FROM_BROWSER] if COOKIES_FROM_BROWSER else [])
+    )
+    extractor_args = _youtube_extractor_args() if is_youtube else []
+    cmd = [sys.executable, "-m", "yt_dlp"] + cookie_args + extractor_args + args
     logger.info("Running: %s", " ".join(cmd))
     result = subprocess.run(
         cmd,
@@ -139,6 +176,17 @@ def _run_ytdlp(args: List[str], timeout: int = 120) -> subprocess.CompletedProce
         )
         if stderr.strip():
             logger.error("yt-dlp failed: %s", stderr[:500])
+            # Provide a more actionable hint for the YouTube n-sig issue.
+            if "n challenge" in stderr or "Requested format is not available" in stderr or "PO Token" in stderr:
+                deno_hint = (
+                    "" if _has_deno()
+                    else "建议安装 Deno 作为 JS 运行时：brew install deno；"
+                )
+                raise RuntimeError(
+                    "yt-dlp 无法获取 YouTube 音频格式（n-sig 解码失败或缺少 PO Token）。"
+                    f"请先升级 yt-dlp：pip3 install -U yt-dlp；{deno_hint}"
+                    "完成后请重试。原始错误：" + stderr[:200]
+                )
             raise RuntimeError(f"yt-dlp error: {stderr[:200]}")
     return result
 
@@ -290,9 +338,14 @@ def download_audio(url: str, task_dir: Path) -> Path:
         "--audio-format", "best",
         "--audio-quality", "0",
         "--no-playlist",
+        # Explicit format fallback chain: prefer m4a/mp3 progressive,
+        # then any bestaudio, then any best stream. This avoids the
+        # "Requested format is not available" error when only certain
+        # player_clients return playable streams.
+        "-f", "bestaudio[ext=m4a]/bestaudio[ext=mp3]/bestaudio/best",
         "-o", str(output_path),
         url,
-    ], timeout=600)
+    ], timeout=600, url=url)
     # Find the downloaded audio file
     audio_files = list(task_dir.glob("source_audio.*"))
     if not audio_files:

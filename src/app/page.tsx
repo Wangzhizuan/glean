@@ -6,7 +6,7 @@ const surfaces = [
     href: "/submit",
     number: "01",
     title: "提交链接",
-    description: "混合粘贴 1–10 条视频链接，选择需要生成的内容。",
+    description: "混合粘贴 1–10 条视频或文章链接，选择需要生成的内容。",
     action: "打开工作台 →",
   },
   {

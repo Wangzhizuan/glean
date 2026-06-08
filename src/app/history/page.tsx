@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Toast, useToast } from "@/components/feedback/toast";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHero } from "@/components/layout/page-hero";
@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/form-controls";
-import { exportUrl, getTasks } from "@/lib/api";
+import { exportUrl, deleteTasks, getTasks } from "@/lib/api";
 import type { Task } from "@/lib/api-types";
 import {
   formatDateTime,
@@ -17,9 +17,17 @@ import {
   statusLabels,
 } from "@/lib/format";
 
+function filterByTime(tasks: Task[], range: string): Task[] {
+  if (range === "all") return tasks;
+  const days = Number(range);
+  const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+  return tasks.filter((t) => t.createdAt >= cutoff);
+}
+
 export default function HistoryPage() {
   const [keyword, setKeyword] = useState("");
   const [platform, setPlatform] = useState("全部平台");
+  const [timeRange, setTimeRange] = useState("all");
   const [records, setRecords] = useState<Task[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,7 +52,7 @@ export default function HistoryPage() {
     return () => clearTimeout(timer);
   }, [loadRecords]);
 
-  const visibleRecords = useMemo(() => records, [records]);
+  const visibleRecords = filterByTime(records, timeRange);
   const allVisibleSelected =
     visibleRecords.length > 0 &&
     visibleRecords.every((record) => selected.includes(record.id));
@@ -83,6 +91,24 @@ export default function HistoryPage() {
     showToast(`正在导出 ${completed.length} 条 ${format.toUpperCase()} 文案`);
   }
 
+  async function deleteSelected() {
+    if (!selected.length) {
+      showToast("请先勾选要删除的记录");
+      return;
+    }
+    if (!window.confirm(`确定删除选中的 ${selected.length} 条记录？此操作不可恢复。`)) {
+      return;
+    }
+    try {
+      await deleteTasks(selected);
+      setRecords((prev) => prev.filter((r) => !selected.includes(r.id)));
+      showToast(`已删除 ${selected.length} 条记录`);
+      setSelected([]);
+    } catch {
+      showToast("删除失败，请检查后端服务");
+    }
+  }
+
   return (
     <AppShell action={<Button href="/submit">新建提取任务</Button>}>
       <section className="container">
@@ -90,7 +116,7 @@ export default function HistoryPage() {
           action={
             <Badge tone="success">共 {records.length} 条本地任务</Badge>
           }
-          description="筛选、查看或批量导出过去生成的视频文案。记录和结果保存在当前 Mac 本机。"
+          description="筛选、查看或批量导出过去生成的视频与文章文案。记录和结果保存在当前 Mac 本机。"
           eyebrow="文案资料库"
           title="看过的内容，已经整理好了。"
         />
@@ -111,15 +137,32 @@ export default function HistoryPage() {
                 <option value="douyin">抖音</option>
                 <option value="bilibili">Bilibili</option>
                 <option value="youtube">YouTube</option>
+                <option value="wechat">微信公众号</option>
+                <option value="xiaohongshu">小红书</option>
+                <option value="feishu">飞书文档</option>
+                <option value="web">网页文章</option>
               </Select>
-              <Select aria-label="生成时间">
-                <option>全部时间</option>
-                {/* TODO(history-filter): add createdFrom/createdTo API filters. */}
-                <option disabled>最近 7 天（TODO）</option>
-                <option disabled>最近 30 天（TODO）</option>
+              <Select
+                aria-label="生成时间"
+                onChange={(event) => setTimeRange(event.target.value)}
+                value={timeRange}
+              >
+                <option value="all">全部时间</option>
+                <option value="1">最近 1 天</option>
+                <option value="3">最近 3 天</option>
+                <option value="7">最近 7 天</option>
+                <option value="14">最近 14 天</option>
+                <option value="30">最近 30 天</option>
               </Select>
             </div>
             <div className="row">
+              <Button
+                disabled={!selected.length}
+                onClick={deleteSelected}
+                variant="secondary"
+              >
+                删除选中
+              </Button>
               <Button onClick={() => exportSelected("txt")} variant="secondary">
                 批量 TXT
               </Button>
@@ -139,7 +182,8 @@ export default function HistoryPage() {
                       type="checkbox"
                     />
                   </th>
-                  <th>视频</th>
+                  <th>标题</th>
+                  <th>时长</th>
                   <th>平台</th>
                   <th>创建时间</th>
                   <th>进度</th>
@@ -162,20 +206,22 @@ export default function HistoryPage() {
                       />
                     </td>
                     <td>
-                      <b>{record.title}</b>
-                      <div className="meta">
-                        {formatDuration(record.durationMs)}
-                      </div>
                       <a
-                        className="source-link"
+                        className="history-title-link"
                         href={record.canonicalUrl || record.sourceUrl}
                         rel="noreferrer"
                         target="_blank"
+                        title={record.title}
                       >
-                        打开原视频 ↗
+                        <b>{record.title}</b>
                       </a>
                     </td>
-                    <td>{platformLabels[record.platform]}</td>
+                    <td className="mono">
+                      {record.kind === "article" || !record.durationMs
+                        ? "-"
+                        : formatDuration(record.durationMs)}
+                    </td>
+                    <td>{platformLabels[record.platform] ?? record.platform}</td>
                     <td className="mono">{formatDateTime(record.createdAt)}</td>
                     <td>{Math.round(record.overallProgress * 100)}%</td>
                     <td>

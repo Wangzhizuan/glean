@@ -1,4 +1,13 @@
-export type Platform = "bilibili" | "youtube" | "douyin";
+export type Platform =
+  | "bilibili"
+  | "youtube"
+  | "douyin"
+  | "wechat"
+  | "xiaohongshu"
+  | "feishu"
+  | "web";
+
+export type TaskKind = "video" | "article";
 
 export type TaskStatus =
   | "queued"
@@ -9,6 +18,8 @@ export type TaskStatus =
   | "transcribing"
   | "normalizing"
   | "summarizing"
+  | "fetching"
+  | "extracting"
   | "completed"
   | "paused"
   | "cancelled"
@@ -29,13 +40,23 @@ export interface Capabilities {
     mlxWhisper: CapabilityDependency;
     ollama: CapabilityDependency;
   };
+  article?: {
+    trafilatura: CapabilityDependency;
+    playwright: CapabilityDependency;
+    curlCffi: CapabilityDependency;
+    browserCookie3: CapabilityDependency;
+    lxml: CapabilityDependency;
+    larkCli: CapabilityDependency;
+  };
   platforms: Platform[];
+  sources?: Platform[];
   notice?: string | null;
 }
 
 export interface Task {
   id: string;
   batchId: string;
+  kind: TaskKind;
   platform: Platform;
   sourceUrl: string;
   canonicalUrl: string | null;
@@ -79,11 +100,13 @@ export interface TranscriptSegment {
 export interface TaskResult {
   taskId: string;
   metadata: {
+    kind?: TaskKind;
     platform: Platform;
     platformLabel: string;
     title: string;
     author: string | null;
     durationMs: number;
+    publishedAt?: string | null;
     generatedAt: string;
     sourceUrl: string;
   };

@@ -12,9 +12,9 @@ import { CheckboxLine, Textarea } from "@/components/ui/form-controls";
 import { ApiError, createBatch, getCapabilities } from "@/lib/api";
 import type { Capabilities } from "@/lib/api-types";
 import {
-  detectVideoPlatform,
-  extractSupportedVideoUrls,
-  getSingleVideoUrl,
+  detectSourcePlatform,
+  extractSupportedSourceUrls,
+  getSingleSourceUrl,
 } from "@/lib/video-url";
 import { platformLabels } from "@/lib/format";
 
@@ -40,13 +40,13 @@ export default function SubmitPage() {
   }
 
   function updateLink(index: number, value: string) {
-    const extracted = extractSupportedVideoUrls(value);
+    const extracted = extractSupportedSourceUrls(value);
     if (extracted.length > 1) {
       setLinks((current) => {
         const retained = current.filter((_, linkIndex) => linkIndex !== index);
         return [...retained, ...extracted].slice(0, 10);
       });
-      showToast(`已从文本中识别并拆分 ${Math.min(extracted.length, 10)} 条视频链接`);
+      showToast(`已从文本中识别并拆分 ${Math.min(extracted.length, 10)} 条链接`);
       return;
     }
     setLinks((current) =>
@@ -68,15 +68,15 @@ export default function SubmitPage() {
     const urls = Array.from(
       new Set(
         links
-          .flatMap((value) => extractSupportedVideoUrls(value))
+          .flatMap((value) => extractSupportedSourceUrls(value))
           .filter(Boolean),
       ),
     );
     if (!urls.length) {
-      showToast("请先粘贴至少一个视频链接");
+      showToast("请先粘贴至少一个链接");
       return;
     }
-    if (links.some((value) => value.trim() && !getSingleVideoUrl(value))) {
+    if (links.some((value) => value.trim() && !getSingleSourceUrl(value))) {
       showToast("有输入未识别到唯一的支持链接，请检查后再提交");
       return;
     }
@@ -113,9 +113,9 @@ export default function SubmitPage() {
                 : "正在连接本地服务"}
             </Badge>
           }
-          description="粘贴 1–10 条抖音、Bilibili 或 YouTube 链接。任务和生成结果会保存到当前 Mac 本机。"
-          eyebrow="从视频到可用文字"
-          title="把值得反复看的视频，变成随时可用的文案。"
+          description="粘贴 1–10 条视频或文章链接，支持抖音、Bilibili、YouTube、微信公众号、小红书、飞书文档以及任意网页。任务和生成结果会保存到当前 Mac 本机。"
+          eyebrow="从视频与文章到可用文字"
+          title="把值得反复看的内容，变成随时可用的文案。"
         />
         {isDemo && (
           <div className="system-notice system-notice--warning">
@@ -129,7 +129,7 @@ export default function SubmitPage() {
           <Card as="article" className="stack" panel>
             <div className="row row--between">
               <div>
-                <h3>视频链接</h3>
+                <h3>视频或文章链接</h3>
                 <p className="meta">
                   可直接粘贴链接或包含链接的分享文案，最多 10 条
                 </p>
@@ -146,10 +146,10 @@ export default function SubmitPage() {
                   </span>
                   <div className="link-input-wrap">
                     <Textarea
-                    aria-label={`第 ${index + 1} 个视频链接`}
+                    aria-label={`第 ${index + 1} 个链接`}
                     autoFocus={index === links.length - 1 && index > 0}
                     onChange={(event) => updateLink(index, event.target.value)}
-                    placeholder="粘贴视频链接，或包含链接的整段分享文案"
+                    placeholder="粘贴视频或文章链接，或包含链接的整段分享文案"
                     rows={2}
                     value={link}
                     />
@@ -183,7 +183,7 @@ export default function SubmitPage() {
           <aside className="stack">
             <Card as="article" className="stack" panel>
               <h3>本次生成内容</h3>
-              <CheckboxLine>视频逐字稿</CheckboxLine>
+              <CheckboxLine>逐字稿 / 文章正文</CheckboxLine>
               <CheckboxLine>结构化内容总结</CheckboxLine>
               <CheckboxLine>精彩金句提炼</CheckboxLine>
             </Card>
@@ -205,6 +205,18 @@ export default function SubmitPage() {
                 available={capabilities?.dependencies.ollama.available}
                 label="Ollama 本地总结"
               />
+              <CapabilityLine
+                available={capabilities?.article?.trafilatura.available}
+                label="trafilatura 文章提取"
+              />
+              <CapabilityLine
+                available={capabilities?.article?.playwright.available}
+                label="Playwright 飞书 / 动态页"
+              />
+              <CapabilityLine
+                available={capabilities?.article?.larkCli.available}
+                label="lark-cli 飞书文档"
+              />
             </Card>
           </aside>
         </div>
@@ -218,11 +230,11 @@ function LinkDetection({ value }: { value: string }) {
   if (!value.trim()) {
     return <span className="link-detection meta">等待识别平台</span>;
   }
-  const urls = extractSupportedVideoUrls(value);
+  const urls = extractSupportedSourceUrls(value);
   if (!urls.length) {
     return (
       <span className="link-detection link-detection--error">
-        未识别到支持的视频链接
+        未识别到支持的链接
       </span>
     );
   }
@@ -233,7 +245,7 @@ function LinkDetection({ value }: { value: string }) {
       </span>
     );
   }
-  const platform = detectVideoPlatform(urls[0]);
+  const platform = detectSourcePlatform(urls[0]);
   return (
     <span className="link-detection link-detection--success">
       已识别：{platform ? platformLabels[platform] : "支持平台"}

@@ -50,19 +50,15 @@ export function AppShell({
       <nav aria-label="移动端导航" className="mobile-nav">
         {navItems.map((item) => (
           <Link
-            aria-current={pathname === item.href ? "page" : undefined}
+            aria-current={
+              isActive(pathname, item.href) ? "page" : undefined
+            }
             href={item.href}
             key={item.href}
           >
             {item.mobileLabel}
           </Link>
         ))}
-        <Link
-          aria-current={pathname === "/detail" ? "page" : undefined}
-          href="/detail"
-        >
-          文案
-        </Link>
       </nav>
     </>
   );

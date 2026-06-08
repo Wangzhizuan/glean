@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Toast, useToast } from "@/components/feedback/toast";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHero } from "@/components/layout/page-hero";
@@ -18,9 +18,15 @@ import { cx } from "@/lib/class-names";
 
 type TabId = "summary" | "transcript" | "quotes";
 
-const tabs: Array<{ id: TabId; label: string }> = [
+const VIDEO_TABS: Array<{ id: TabId; label: string }> = [
   { id: "summary", label: "内容总结" },
   { id: "transcript", label: "视频逐字稿" },
+  { id: "quotes", label: "精彩金句" },
+];
+
+const ARTICLE_TABS: Array<{ id: TabId; label: string }> = [
+  { id: "summary", label: "内容总结" },
+  { id: "transcript", label: "文章正文" },
   { id: "quotes", label: "精彩金句" },
 ];
 
@@ -33,12 +39,20 @@ export default function DetailPage() {
 }
 
 function DetailContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const taskId = searchParams.get("taskId");
   const [activeTab, setActiveTab] = useState<TabId>("summary");
   const [result, setResult] = useState<TaskResult | null>(null);
   const [loading, setLoading] = useState(Boolean(taskId));
   const { message, showToast } = useToast();
+
+  // 直接访问 /detail 但没有 taskId 时，重定向到历史记录页。
+  useEffect(() => {
+    if (!taskId) {
+      router.replace("/history");
+    }
+  }, [taskId, router]);
 
   useEffect(() => {
     if (!taskId) return;
@@ -79,7 +93,7 @@ function DetailContent() {
     }
   }
 
-  function exportArticle(format: "txt" | "srt" | "md" | "json") {
+  function exportArticle(format: "txt" | "md" | "json") {
     if (!taskId) return;
     const anchor = document.createElement("a");
     anchor.href = exportUrl(taskId, format);
@@ -109,6 +123,9 @@ function DetailContent() {
     );
   }
 
+  const isArticle = result.metadata.kind === "article";
+  const tabs = isArticle ? ARTICLE_TABS : VIDEO_TABS;
+
   return (
     <AppShell
       action={
@@ -127,17 +144,18 @@ function DetailContent() {
               <Button onClick={() => exportArticle("txt")} variant="quiet">
                 TXT
               </Button>
-              <Button onClick={() => exportArticle("srt")} variant="quiet">
-                SRT
-              </Button>
               <Button onClick={() => exportArticle("md")} variant="quiet">
                 Markdown
               </Button>
               <Button onClick={() => exportArticle("json")}>JSON</Button>
             </div>
           }
-          description={`${formatDuration(result.metadata.durationMs)} · 逐字稿 ${result.transcript.wordCount} 字 · ${formatDateTime(result.metadata.generatedAt)} 生成`}
-          eyebrow={`文案详情 · ${result.metadata.platformLabel}`}
+          description={
+            isArticle
+              ? `${result.transcript.wordCount} 字 · ${formatDateTime(result.metadata.generatedAt)} 生成`
+              : `${formatDuration(result.metadata.durationMs)} · 逐字稿 ${result.transcript.wordCount} 字 · ${formatDateTime(result.metadata.generatedAt)} 生成`
+          }
+          eyebrow={`${isArticle ? "文章详情" : "文案详情"} · ${result.metadata.platformLabel}`}
           title={result.metadata.title}
         />
         {result.processor.mode === "demo" && (
@@ -152,7 +170,7 @@ function DetailContent() {
           rel="noreferrer"
           target="_blank"
         >
-          查看原视频 ↗
+          {isArticle ? "查看原文" : "查看原视频"} ↗
         </a>
         <div aria-label="文案内容类型" className="tabs" role="tablist">
           {tabs.map((tab) => (
@@ -266,10 +284,18 @@ function DetailContent() {
           {activeTab === "transcript" && (
             <div>
               {result.transcript.segments.map((segment) => (
-                <div className="transcript-segment" key={segment.index}>
-                  <span className="timestamp">
-                    {formatTimestamp(segment.startMs)}
-                  </span>
+                <div
+                  className={cx(
+                    "transcript-segment",
+                    isArticle && "transcript-segment--article",
+                  )}
+                  key={segment.index}
+                >
+                  {!isArticle && (
+                    <span className="timestamp">
+                      {formatTimestamp(segment.startMs)}
+                    </span>
+                  )}
                   <p>{segment.text}</p>
                 </div>
               ))}
@@ -281,7 +307,7 @@ function DetailContent() {
                 <div className="quote quote--with-meta" key={quote.text}>
                   <p>“{quote.text}”</p>
                   <span className="meta mono">
-                    {formatTimestamp(quote.startMs)} ·{" "}
+                    {!isArticle && `${formatTimestamp(quote.startMs)} · `}
                     {quote.isPolished ? "AI 润色" : "原话摘录"}
                   </span>
                 </div>

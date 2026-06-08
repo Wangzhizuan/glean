@@ -94,6 +94,16 @@ function ProgressContent() {
     }
   }
 
+  async function retryTask(task: Task) {
+    try {
+      await controlTask(task.id, "retry");
+      showToast(`已重新加入队列：${task.title}`);
+      await loadBatch();
+    } catch {
+      showToast("重试任务失败");
+    }
+  }
+
   if (loading) return <ProgressLoading />;
   if (!batch) {
     return (
@@ -107,7 +117,7 @@ function ProgressContent() {
         <section className="container">
           <Card className="empty-state stack" panel>
             <h3>还没有可查看的任务</h3>
-            <p>请先提交一个视频链接批次。</p>
+            <p>请先提交一个视频或文章链接批次。</p>
             <Button href="/submit">前往新建任务</Button>
           </Card>
         </section>
@@ -139,7 +149,7 @@ function ProgressContent() {
           }
           description="进度由本地服务通过 SSE 实时推送。完成的文案可以立即查看，不必等待整个批次结束。"
           eyebrow="任务队列"
-          title={`${batch.taskCount} 条视频正在变成文字。`}
+          title={`${batch.taskCount} 条内容正在变成文字。`}
         />
         <div className="grid grid--content-sidebar">
           <Card as="article" panel>
@@ -147,6 +157,7 @@ function ProgressContent() {
               <TaskRow
                 key={task.id}
                 onCancel={() => cancelTask(task)}
+                onRetry={() => retryTask(task)}
                 task={task}
               />
             ))}
@@ -172,14 +183,18 @@ function ProgressContent() {
 
 function TaskRow({
   onCancel,
+  onRetry,
   task,
 }: {
   onCancel: () => void;
+  onRetry: () => void;
   task: Task;
 }) {
   const completed = task.status === "completed";
   const failed = task.status === "failed";
   const cancelled = task.status === "cancelled";
+  const isArticle = task.kind === "article";
+  const platformLabel = platformLabels[task.platform] ?? task.platform;
   const badgeTone: "success" | "warning" | "working" = completed
     ? "success"
     : failed
@@ -190,11 +205,12 @@ function TaskRow({
     <div className="task">
       <div className="row row--between task__header">
         <div className="row">
-          <div className="task__thumb">{platformLabels[task.platform]}</div>
+          <div className="task__thumb">{platformLabel}</div>
           <div>
             <b>{task.title}</b>
             <p className="meta">
-              {platformLabels[task.platform]} · {formatDuration(task.durationMs)}
+              {platformLabel}
+              {!isArticle && ` · ${formatDuration(task.durationMs)}`}
             </p>
             <a
               className="source-link"
@@ -202,13 +218,20 @@ function TaskRow({
               rel="noreferrer"
               target="_blank"
             >
-              打开原视频 ↗
+              {isArticle ? "打开原文" : "打开原视频"} ↗
             </a>
           </div>
         </div>
-        <Badge tone={cancelled ? "neutral" : badgeTone}>
-          {statusLabels[task.status]}
-        </Badge>
+        <div className="row task__status">
+          <Badge tone={cancelled ? "neutral" : badgeTone}>
+            {statusLabels[task.status]}
+          </Badge>
+          {(failed || cancelled) && (
+            <Button onClick={onRetry} variant="secondary">
+              重试
+            </Button>
+          )}
+        </div>
       </div>
       {completed ? (
         <div className="row row--between task__footer">

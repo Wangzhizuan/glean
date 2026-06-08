@@ -106,6 +106,13 @@ export function eventsUrl(batchId: string) {
   return `${API_BASE}/events?batchId=${encodeURIComponent(batchId)}`;
 }
 
-export function exportUrl(taskId: string, format: "txt" | "srt" | "md" | "json") {
+export function exportUrl(taskId: string, format: "txt" | "md" | "json") {
   return `${API_BASE}/tasks/${taskId}/export?format=${format}`;
+}
+
+export function deleteTasks(taskIds: string[]) {
+  return request<{ deleted: number }>("/tasks/delete", {
+    method: "POST",
+    body: JSON.stringify({ task_ids: taskIds }),
+  });
 }

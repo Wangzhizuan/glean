@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import threading
@@ -13,7 +14,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urlparse, parse_qs
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,6 +36,9 @@ ACTIVE_STATUSES = {
     "transcribing",
     "normalizing",
     "summarizing",
+    # Article-only stages
+    "fetching",
+    "extracting",
 }
 SUPPORTED_HOSTS = {
     "bilibili.com": "bilibili",
@@ -46,6 +50,22 @@ SUPPORTED_HOSTS = {
     "douyin.com": "douyin",
     "www.douyin.com": "douyin",
     "v.douyin.com": "douyin",
+}
+ARTICLE_HOSTS = {
+    "mp.weixin.qq.com": "wechat",
+    "xiaohongshu.com": "xiaohongshu",
+    "www.xiaohongshu.com": "xiaohongshu",
+    "xhslink.com": "xiaohongshu",
+}
+FEISHU_HOST_SUFFIXES = (".feishu.cn", ".larkoffice.com", ".feishu-pre.cn")
+PLATFORM_LABELS = {
+    "bilibili": "Bilibili",
+    "youtube": "YouTube",
+    "douyin": "抖音",
+    "wechat": "微信公众号",
+    "xiaohongshu": "小红书",
+    "feishu": "飞书文档",
+    "web": "网页文章",
 }
 
 
@@ -87,6 +107,7 @@ def init_database() -> None:
                 source_url TEXT NOT NULL,
                 canonical_url TEXT,
                 platform TEXT NOT NULL,
+                kind TEXT NOT NULL DEFAULT 'video',
                 source_id TEXT,
                 title TEXT,
                 author TEXT,
@@ -158,6 +179,12 @@ def init_database() -> None:
             """,
             (utc_now(),),
         )
+        # Backward-compat: ensure the `kind` column exists on databases that
+        # were created before article support was added.
+        try:
+            connection.execute("ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'video'")
+        except sqlite3.OperationalError:
+            pass
 
 
 class OutputOptions(BaseModel):
@@ -183,19 +210,37 @@ class BatchCreate(BaseModel):
     options: ProcessingOptions = Field(default_factory=ProcessingOptions)
 
 
-def identify_platform(raw_url: str) -> str:
+def normalize_url(raw_url: str) -> str:
+    """Normalize platform-specific URL variants into yt-dlp compatible forms."""
+    parsed = urlparse(raw_url)
+    host = (parsed.hostname or "").lower()
+    # 抖音精选页 jingxuan?modal_id=xxx → video/xxx
+    if host in {"www.douyin.com", "douyin.com"} and "modal_id" in (parsed.query or ""):
+        qs = parse_qs(parsed.query)
+        modal_ids = qs.get("modal_id", [])
+        if modal_ids and modal_ids[0].isdigit():
+            return f"https://www.douyin.com/video/{modal_ids[0]}"
+    return raw_url
+
+
+def identify_platform(raw_url: str) -> tuple[str, str]:
+    """Return ``(kind, platform)`` where ``kind`` is ``"video"`` or ``"article"``."""
     parsed = urlparse(raw_url)
     if parsed.scheme not in {"http", "https"}:
         raise HTTPException(400, detail={"code": "UNSUPPORTED_URL", "message": "只允许 http 或 https 链接"})
     host = (parsed.hostname or "").lower()
     if host in {"localhost", "127.0.0.1", "::1"}:
         raise HTTPException(400, detail={"code": "UNSUPPORTED_URL", "message": "不允许本机或内网链接"})
-    platform = SUPPORTED_HOSTS.get(host)
-    if not platform:
-        raise HTTPException(400, detail={"code": "UNSUPPORTED_URL", "message": f"暂不支持域名：{host or '未知'}"})
+    if host in SUPPORTED_HOSTS:
+        return ("video", SUPPORTED_HOSTS[host])
+    if host in ARTICLE_HOSTS:
+        return ("article", ARTICLE_HOSTS[host])
+    if any(host.endswith(suffix) for suffix in FEISHU_HOST_SUFFIXES):
+        return ("article", "feishu")
+    # Generic web articles fall through.
+    return ("article", "web")
     # TODO(security): resolve DNS and validate every redirect target before the
     # real downloader follows it, blocking private/link-local IP ranges.
-    return platform
 
 
 def dependency_status(command: str) -> Dict[str, Any]:
@@ -231,6 +276,7 @@ def task_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     return {
         "id": row["id"],
         "batchId": row["batch_id"],
+        "kind": row["kind"] if "kind" in row.keys() else "video",
         "platform": row["platform"],
         "sourceUrl": row["source_url"],
         "canonicalUrl": row["canonical_url"],
@@ -260,7 +306,8 @@ def update_batch_counts(connection: sqlite3.Connection, batch_id: str) -> None:
           SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
           SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
           SUM(CASE WHEN status IN ('queued','resolving','fetching_subtitle','downloading',
-            'extracting_audio','transcribing','normalizing','summarizing') THEN 1 ELSE 0 END) AS active,
+            'extracting_audio','transcribing','normalizing','summarizing',
+            'fetching','extracting') THEN 1 ELSE 0 END) AS active,
           SUM(CASE WHEN status = 'paused' THEN 1 ELSE 0 END) AS paused
         FROM tasks WHERE batch_id = ?
         """,
@@ -358,11 +405,6 @@ DEMO_SEGMENTS = [
 
 
 def build_demo_result(task: sqlite3.Row) -> Dict[str, Any]:
-    platform_names = {
-        "bilibili": "Bilibili",
-        "youtube": "YouTube",
-        "douyin": "抖音",
-    }
     segments = [
         {
             "index": index,
@@ -376,11 +418,13 @@ def build_demo_result(task: sqlite3.Row) -> Dict[str, Any]:
     return {
         "taskId": task["id"],
         "metadata": {
+            "kind": task["kind"] if "kind" in task.keys() else "video",
             "platform": task["platform"],
-            "platformLabel": platform_names[task["platform"]],
+            "platformLabel": PLATFORM_LABELS.get(task["platform"], task["platform"]),
             "title": task["title"],
             "author": task["author"],
             "durationMs": task["duration_ms"],
+            "publishedAt": None,
             "generatedAt": utc_now(),
             "sourceUrl": task["source_url"],
         },
@@ -561,6 +605,15 @@ class Worker:
     def process(self, task_id: str) -> None:
         if PROCESSOR_MODE == "demo":
             self._process_demo(task_id)
+            return
+        # Real mode: dispatch by task kind
+        with connect() as connection:
+            row = connection.execute(
+                "SELECT kind FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            kind = row["kind"] if row else "video"
+        if kind == "article":
+            self._process_article(task_id)
         else:
             self._process_real(task_id)
 
@@ -650,15 +703,17 @@ class Worker:
             for q in pipeline_result.quotes
         ]
 
-        platform_names = {"bilibili": "Bilibili", "youtube": "YouTube", "douyin": "抖音"}
+        platform_names = PLATFORM_LABELS
         result = {
             "taskId": task_id,
             "metadata": {
+                "kind": "video",
                 "platform": meta.platform,
                 "platformLabel": platform_names.get(meta.platform, meta.platform),
                 "title": meta.title,
                 "author": meta.author,
                 "durationMs": meta.duration_ms,
+                "publishedAt": meta.published_at,
                 "generatedAt": utc_now(),
                 "sourceUrl": meta.source_url,
             },
@@ -753,6 +808,236 @@ class Worker:
             )
             update_batch_counts(connection, batch_id)
 
+    def _process_article(self, task_id: str) -> None:
+        """Process an article task: fetch HTML → extract → summarize via Ollama."""
+        from .article import (
+            ArticleError,
+            ArticleResult,
+            extract_article,
+        )
+        from .pipeline import (
+            SubtitleSegment,
+            _check_ollama_available,
+            generate_quotes,
+            generate_summary,
+        )
+
+        with connect() as connection:
+            task = connection.execute(
+                "SELECT * FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            if not task:
+                return
+            batch_id = task["batch_id"]
+            url = task["source_url"]
+            platform = task["platform"]
+
+        def push(stage: str, progress: float) -> None:
+            if not self.wait_if_paused(task_id):
+                raise RuntimeError("CANCELLED")
+            with connect() as conn:
+                current = conn.execute(
+                    "SELECT status FROM tasks WHERE id = ?", (task_id,)
+                ).fetchone()
+                if current and current["status"] == "cancelled":
+                    raise RuntimeError("CANCELLED")
+                conn.execute(
+                    """
+                    UPDATE tasks SET status = ?, stage_progress = 0.5,
+                      overall_progress = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (stage, progress, utc_now(), task_id),
+                )
+                conn.execute(
+                    "UPDATE batches SET updated_at = ? WHERE id = ?",
+                    (utc_now(), batch_id),
+                )
+
+        try:
+            push("resolving", 0.10)
+            push("fetching", 0.40)
+            try:
+                article: ArticleResult = extract_article(url, platform)
+            except ArticleError as e:
+                self.fail_task(task_id, e.code, e.message)
+                return
+            push("extracting", 0.70)
+        except RuntimeError as e:
+            if "CANCELLED" in str(e):
+                return
+            raise
+
+        # Build pseudo segments from paragraphs so generate_quotes can work.
+        paragraphs = [p.strip() for p in re.split(r"\n{2,}", article.plain_text) if p.strip()]
+        if not paragraphs:
+            paragraphs = [article.plain_text]
+        # Split overly long paragraphs into ~200-char chunks.
+        segments: List[SubtitleSegment] = []
+        idx = 0
+        for paragraph in paragraphs:
+            if len(paragraph) <= 240:
+                segments.append(SubtitleSegment(index=idx, start_ms=0, end_ms=0, text=paragraph))
+                idx += 1
+                continue
+            for offset in range(0, len(paragraph), 200):
+                chunk = paragraph[offset:offset + 200]
+                segments.append(SubtitleSegment(index=idx, start_ms=0, end_ms=0, text=chunk))
+                idx += 1
+
+        # Summarize via Ollama (best-effort)
+        push("summarizing", 0.92)
+        summary_data: Dict[str, Any] = {}
+        quotes_data: List[Dict[str, Any]] = []
+        ollama_ok = _check_ollama_available()
+        if ollama_ok and article.plain_text.strip():
+            try:
+                summary = generate_summary(article.plain_text, article.title)
+                summary_data = {
+                    "overview": summary.overview,
+                    "coreThesis": summary.core_thesis,
+                    "detailedSummary": summary.detailed_summary,
+                    "keyPoints": summary.key_points,
+                    "contentStructure": summary.content_structure,
+                    "actionItems": summary.action_items,
+                    "targetAudience": summary.target_audience,
+                    "terms": summary.terms,
+                    "conclusions": summary.conclusions,
+                }
+            except Exception as e:  # noqa: BLE001
+                logger = __import__("logging").getLogger("shiju.article")
+                logger.warning("article summary failed: %s", e)
+            try:
+                quotes = generate_quotes(segments, article.title)
+                quotes_data = [
+                    {
+                        "text": q.text,
+                        "startMs": 0,
+                        "endMs": 0,
+                        "sourceSegmentIds": q.source_segment_ids,
+                        "isPolished": q.is_polished,
+                    }
+                    for q in quotes
+                ]
+            except Exception as e:  # noqa: BLE001
+                logger = __import__("logging").getLogger("shiju.article")
+                logger.warning("article quotes failed: %s", e)
+        elif not ollama_ok:
+            summary_data = {
+                "overview": "Ollama 服务未运行，跳过自动总结。请启动 Ollama 后重试。",
+                "coreThesis": "",
+                "detailedSummary": "",
+                "keyPoints": [],
+                "contentStructure": [],
+                "actionItems": [],
+                "targetAudience": [],
+                "terms": [],
+                "conclusions": [],
+            }
+
+        segments_data = [
+            {"index": s.index, "startMs": 0, "endMs": 0, "text": s.text}
+            for s in segments
+        ]
+        result = {
+            "taskId": task_id,
+            "metadata": {
+                "kind": "article",
+                "platform": platform,
+                "platformLabel": PLATFORM_LABELS.get(platform, platform),
+                "title": article.title,
+                "author": article.author,
+                "durationMs": 0,
+                "publishedAt": article.published_at,
+                "generatedAt": utc_now(),
+                "sourceUrl": article.source_url,
+            },
+            "transcript": {
+                "source": f"article_{platform}",
+                "language": "zh",
+                "wordCount": article.word_count,
+                "plainText": article.plain_text,
+                "segments": segments_data,
+            },
+            "summary": summary_data,
+            "quotes": quotes_data,
+            "processor": {
+                "mode": "real",
+                "notice": None,
+            },
+        }
+
+        with connect() as connection:
+            connection.execute(
+                "INSERT OR REPLACE INTO results(task_id, result_json, created_at) VALUES (?, ?, ?)",
+                (task_id, json.dumps(result, ensure_ascii=False), utc_now()),
+            )
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO transcripts(id, task_id, source, language, raw_text,
+                  readable_text, segments_json, word_count, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    make_id("tr"),
+                    task_id,
+                    f"article_{platform}",
+                    "zh",
+                    article.plain_text,
+                    article.markdown,
+                    json.dumps(segments_data, ensure_ascii=False),
+                    article.word_count,
+                    utc_now(),
+                ),
+            )
+            if summary_data:
+                connection.execute(
+                    """
+                    INSERT INTO generated_contents(id, task_id, type, model, prompt_version,
+                      content_json, created_at)
+                    VALUES (?, ?, 'summary', ?, 'v2-rich-zh', ?, ?)
+                    """,
+                    (
+                        make_id("gc"),
+                        task_id,
+                        os.getenv("SHIJU_OLLAMA_MODEL", "qwen2.5:7b"),
+                        json.dumps(summary_data, ensure_ascii=False),
+                        utc_now(),
+                    ),
+                )
+            if quotes_data:
+                connection.execute(
+                    """
+                    INSERT INTO generated_contents(id, task_id, type, model, prompt_version,
+                      content_json, created_at)
+                    VALUES (?, ?, 'quotes', ?, 'v2-12-plus-zh', ?, ?)
+                    """,
+                    (
+                        make_id("gc"),
+                        task_id,
+                        os.getenv("SHIJU_OLLAMA_MODEL", "qwen2.5:7b"),
+                        json.dumps(quotes_data, ensure_ascii=False),
+                        utc_now(),
+                    ),
+                )
+            connection.execute(
+                """
+                UPDATE tasks SET status = 'completed', stage_progress = 1,
+                  overall_progress = 1, title = ?, author = ?, duration_ms = 0,
+                  canonical_url = ?, updated_at = ?, completed_at = ?
+                WHERE id = ?
+                """,
+                (
+                    article.title,
+                    article.author,
+                    article.canonical_url,
+                    utc_now(),
+                    utc_now(),
+                    task_id,
+                ),
+            )
+            update_batch_counts(connection, batch_id)
+
     def _process_demo(self, task_id: str) -> None:
         """Demo processing with simulated delays."""
         for stage, overall_progress, duration in STAGES:
@@ -767,12 +1052,8 @@ class Worker:
                 title = task["title"]
                 duration_ms = task["duration_ms"]
                 if stage == "resolving":
-                    platform_label = {
-                        "bilibili": "Bilibili",
-                        "youtube": "YouTube",
-                        "douyin": "抖音",
-                    }[task["platform"]]
-                    title = f"{platform_label} 视频文案提取示例"
+                    platform_label = PLATFORM_LABELS.get(task["platform"], task["platform"])
+                    title = f"{platform_label} 文案提取示例"
                     duration_ms = 178000
                 connection.execute(
                     """
@@ -862,12 +1143,15 @@ def health() -> Dict[str, Any]:
 
 @app.get("/api/capabilities")
 def capabilities() -> Dict[str, Any]:
+    from .article import article_capabilities
+
     dependencies = {
         "ffmpeg": dependency_status("ffmpeg"),
         "ytDlp": dependency_status("yt-dlp"),
         "mlxWhisper": mlx_whisper_status(),
         "ollama": ollama_status(),
     }
+    article = article_capabilities()
     real_ready = all(
         [
             dependencies["ffmpeg"]["available"],
@@ -880,7 +1164,9 @@ def capabilities() -> Dict[str, Any]:
         "status": "ready" if PROCESSOR_MODE == "demo" or real_ready else "needs_setup",
         "processorMode": PROCESSOR_MODE,
         "dependencies": dependencies,
+        "article": article,
         "platforms": ["douyin", "bilibili", "youtube"],
+        "sources": ["douyin", "bilibili", "youtube", "wechat", "xiaohongshu", "feishu", "web"],
         "notice": (
             "演示处理器已启用，可跑通任务、进度、结果与导出；不会读取真实视频。"
             if PROCESSOR_MODE == "demo"
@@ -891,10 +1177,10 @@ def capabilities() -> Dict[str, Any]:
 
 @app.post("/api/batches", status_code=201)
 def create_batch(payload: BatchCreate) -> Dict[str, Any]:
-    urls = [url.strip() for url in payload.urls if url.strip()]
+    urls = [normalize_url(url.strip()) for url in payload.urls if url.strip()]
     if not 1 <= len(urls) <= 10:
         raise HTTPException(400, detail={"code": "INVALID_BATCH_SIZE", "message": "单批需要 1-10 条链接"})
-    platforms = [identify_platform(url) for url in urls]
+    classifications = [identify_platform(url) for url in urls]
     batch_id = make_id("bat")
     task_ids: List[str] = []
     created_at = utc_now()
@@ -907,17 +1193,17 @@ def create_batch(payload: BatchCreate) -> Dict[str, Any]:
             "INSERT INTO batches VALUES (?, 'processing', ?, 0, 0, ?, ?)",
             (batch_id, len(urls), created_at, created_at),
         )
-        for url, platform in zip(urls, platforms):
+        for url, (kind, platform) in zip(urls, classifications):
             task_id = make_id("tsk")
             task_ids.append(task_id)
             connection.execute(
                 """
                 INSERT INTO tasks(
-                  id, batch_id, source_url, platform, status, options_json,
+                  id, batch_id, source_url, platform, kind, status, options_json,
                   created_at, updated_at
-                ) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?)
                 """,
-                (task_id, batch_id, url, platform, options, created_at, created_at),
+                (task_id, batch_id, url, platform, kind, options, created_at, created_at),
             )
     return {"batchId": batch_id, "taskIds": task_ids, "createdAt": created_at}
 
@@ -1033,6 +1319,30 @@ def task_action(
     return control_task(task_id, action)
 
 
+class DeleteTasksRequest(BaseModel):
+    task_ids: List[str]
+
+
+@app.post("/api/tasks/delete")
+def delete_tasks(body: DeleteTasksRequest) -> Dict[str, Any]:
+    if not body.task_ids:
+        raise HTTPException(400, detail={"code": "BAD_REQUEST", "message": "task_ids 不能为空"})
+    placeholders = ",".join("?" * len(body.task_ids))
+    with connect() as connection:
+        # 删除关联数据文件
+        rows = connection.execute(
+            f"SELECT id FROM tasks WHERE id IN ({placeholders})", body.task_ids
+        ).fetchall()
+        for row in rows:
+            task_dir = DATA_DIR / "tasks" / row["id"]
+            if task_dir.exists():
+                shutil.rmtree(task_dir, ignore_errors=True)
+        connection.execute(
+            f"DELETE FROM tasks WHERE id IN ({placeholders})", body.task_ids
+        )
+    return {"deleted": len(rows)}
+
+
 @app.post("/api/batches/{batch_id}/{action}")
 def batch_action(batch_id: str, action: Literal["pause", "resume"]) -> Dict[str, Any]:
     with connect() as connection:
@@ -1046,12 +1356,11 @@ def batch_action(batch_id: str, action: Literal["pause", "resume"]) -> Dict[str,
     return get_batch(batch_id)
 
 
-def format_timestamp(milliseconds: int, srt: bool = False) -> str:
+def format_timestamp(milliseconds: int) -> str:
     total_seconds, ms = divmod(milliseconds, 1000)
     minutes, seconds = divmod(total_seconds, 60)
     hours, minutes = divmod(minutes, 60)
-    separator = "," if srt else "."
-    return f"{hours:02}:{minutes:02}:{seconds:02}{separator}{ms:03}"
+    return f"{hours:02}:{minutes:02}:{seconds:02}.{ms:03}"
 
 
 def build_export(result: Dict[str, Any], export_format: str) -> tuple[str, str, str]:
@@ -1069,14 +1378,6 @@ def build_export(result: Dict[str, Any], export_format: str) -> tuple[str, str, 
     safe_name = "".join(character for character in title if character not in '/\\:*?"<>|')[:80]
     if export_format == "json":
         return f"{safe_name}.json", "application/json", json.dumps(result, ensure_ascii=False, indent=2)
-    if export_format == "srt":
-        blocks = []
-        for index, segment in enumerate(transcript["segments"], start=1):
-            blocks.append(
-                f"{index}\n{format_timestamp(segment['startMs'], True)} --> "
-                f"{format_timestamp(segment['endMs'], True)}\n{segment['text']}"
-            )
-        return f"{safe_name}.srt", "application/x-subrip", "\n\n".join(blocks)
     if export_format == "md":
         points = "\n".join(
             f"- **{point['title']}**：{point['content']}" for point in summary["keyPoints"]
@@ -1150,7 +1451,7 @@ def build_export(result: Dict[str, Any], export_format: str) -> tuple[str, str, 
 
 
 @app.get("/api/tasks/{task_id}/export")
-def export_task(task_id: str, format: str = Query("txt", pattern="^(txt|srt|md|json)$")):
+def export_task(task_id: str, format: str = Query("txt", pattern="^(txt|md|json)$")):
     result = get_result(task_id)
     filename, media_type, content = build_export(result, format)
     return Response(
