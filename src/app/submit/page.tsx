@@ -166,7 +166,7 @@ export default function SubmitPage() {
               ))}
             </div>
             <div className="hint">
-              私密、已删除、付费或需要平台权限的视频不会被绕过限制。真实处理模式下，长视频会自动分段。
+              视频走 yt-dlp + mlx-whisper 本地转写，文章走 trafilatura / Playwright / lark-cli 提取正文，再统一交给本地 Ollama 生成总结与金句。私密、付费或需要登录的内容不会被绕过限制。
             </div>
             <div className="row row--between row--mobile-stack">
               <span className="meta">

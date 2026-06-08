@@ -116,8 +116,8 @@ export function DesignSystemPreview() {
           <div className="grid grid--content-sidebar">
             <Card className="stack" panel>
               <label>
-                <span className="field__label">视频链接</span>
-                <Input placeholder="粘贴视频链接" type="url" />
+                <span className="field__label">视频或文章链接</span>
+                <Input placeholder="粘贴视频或文章链接" type="url" />
               </label>
               <label>
                 <span className="field__label">平台</span>
@@ -125,6 +125,10 @@ export function DesignSystemPreview() {
                   <option>抖音</option>
                   <option>Bilibili</option>
                   <option>YouTube</option>
+                  <option>微信公众号</option>
+                  <option>小红书</option>
+                  <option>飞书文档</option>
+                  <option>网页文章</option>
                 </Select>
               </label>
               <CheckboxLine>生成结构化内容总结</CheckboxLine>

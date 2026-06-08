@@ -125,7 +125,7 @@
 
 .home-hero h1 {
   max-width: 720px;
-  font-size: clamp(44px, 6vw, 72px);
+  font-size: clamp(44px, 6vw, 52px);
 }
 
 .home-hero .lead {
@@ -165,7 +165,7 @@
   height: 10px;
   background: var(--color-border-strong);
   border-radius: 50%;
-  cursor: help;
+  cursor: default;
   transition:
     transform var(--motion-fast) var(--ease-standard),
     background var(--motion-fast) var(--ease-standard);
@@ -245,7 +245,7 @@
 
 .home-demo__result p {
   margin-top: 10px;
-  font: 500 21px/1.35 var(--font-display);
+  font: 500 20px/1.35 var(--font-display);
 }
 
 .surface-section {

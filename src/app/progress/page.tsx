@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { useSearchParams } from "next/navigation";
 import { Toast, useToast } from "@/components/feedback/toast";
 import { AppShell } from "@/components/layout/app-shell";
@@ -14,6 +14,7 @@ import {
   controlTask,
   eventsUrl,
   getBatch,
+  getTasks,
 } from "@/lib/api";
 import type { Batch, Task } from "@/lib/api-types";
 import {
@@ -21,6 +22,20 @@ import {
   platformLabels,
   statusLabels,
 } from "@/lib/format";
+
+const ACTIVE_TASK_STATUSES = new Set([
+  "queued",
+  "resolving",
+  "fetching_subtitle",
+  "downloading",
+  "extracting_audio",
+  "transcribing",
+  "normalizing",
+  "summarizing",
+  "fetching",
+  "extracting",
+  "paused",
+]);
 
 export default function ProgressPage() {
   return (
@@ -30,26 +45,61 @@ export default function ProgressPage() {
   );
 }
 
+function subscribeToLastBatchId(callback: () => void) {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener("storage", callback);
+  return () => window.removeEventListener("storage", callback);
+}
+
 function ProgressContent() {
   const searchParams = useSearchParams();
   const { message, showToast } = useToast();
   const queryBatchId = searchParams.get("batchId");
-  const batchId =
-    queryBatchId ||
-    (typeof window !== "undefined"
-      ? localStorage.getItem("shiju:lastBatchId")
-      : null);
+  const storedBatchId = useSyncExternalStore(
+    subscribeToLastBatchId,
+    () => localStorage.getItem("shiju:lastBatchId"),
+    () => null,
+  );
+  const [fallbackBatchId, setFallbackBatchId] = useState<string | null>(null);
+  const batchId = queryBatchId ?? storedBatchId ?? fallbackBatchId;
   const [batch, setBatch] = useState<Batch | null>(null);
-  const [loading, setLoading] = useState(Boolean(batchId));
+  const [errored, setErrored] = useState(false);
+  const loading = Boolean(batchId) && !batch && !errored;
+
+  // 没有显式 batchId 也没有 localStorage 时，自动从最近的任务里找一个批次
+  // 优先选还在处理中的，没有再回退到最新的一条任务，避免落入空状态。
+  useEffect(() => {
+    if (queryBatchId || storedBatchId) return;
+    let cancelled = false;
+    getTasks()
+      .then(({ items }) => {
+        if (cancelled || !items.length) return;
+        const sorted = [...items].sort((a, b) =>
+          a.createdAt < b.createdAt ? 1 : -1,
+        );
+        const active = sorted.find((task) =>
+          ACTIVE_TASK_STATUSES.has(task.status),
+        );
+        const candidate = active ?? sorted[0];
+        if (candidate?.batchId) {
+          setFallbackBatchId(candidate.batchId);
+        }
+      })
+      .catch(() => {
+        // 后端不可用时静默失败，落到原本的"还没有可查看的任务"空状态。
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [queryBatchId, storedBatchId]);
 
   const loadBatch = useCallback(async () => {
     if (!batchId) return;
     try {
       setBatch(await getBatch(batchId));
     } catch {
+      setErrored(true);
       showToast("无法读取任务批次，请确认本地服务已启动");
-    } finally {
-      setLoading(false);
     }
   }, [batchId, showToast]);
 
@@ -57,8 +107,10 @@ function ProgressContent() {
     if (!batchId) return;
     getBatch(batchId)
       .then(setBatch)
-      .catch(() => showToast("无法读取任务批次，请确认本地服务已启动"))
-      .finally(() => setLoading(false));
+      .catch(() => {
+        setErrored(true);
+        showToast("无法读取任务批次，请确认本地服务已启动");
+      });
   }, [batchId, showToast]);
 
   useEffect(() => {
@@ -147,7 +199,7 @@ function ProgressContent() {
               </Button>
             ) : undefined
           }
-          description="进度由本地服务通过 SSE 实时推送。完成的文案可以立即查看，不必等待整个批次结束。"
+          description="进度由本地服务通过 SSE 实时推送。视频和文章任务并行处理，完成后即可查看，无需等待整个批次。失败任务可在右侧重试。"
           eyebrow="任务队列"
           title={`${batch.taskCount} 条内容正在变成文字。`}
         />

@@ -7,7 +7,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { PageHero } from "@/components/layout/page-hero";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { exportUrl, getTaskResult } from "@/lib/api";
+import { exportUrl, getTaskResult, getTasks } from "@/lib/api";
 import type { TaskResult } from "@/lib/api-types";
 import {
   formatDateTime,
@@ -47,11 +47,29 @@ function DetailContent() {
   const [loading, setLoading] = useState(Boolean(taskId));
   const { message, showToast } = useToast();
 
-  // 直接访问 /detail 但没有 taskId 时，重定向到历史记录页。
+  // 直接访问 /detail 但没有 taskId 时，自动跳到最新一条已完成的文案；
+  // 如果没有任何已完成数据，再回退到历史记录页。
   useEffect(() => {
-    if (!taskId) {
-      router.replace("/history");
-    }
+    if (taskId) return;
+    let cancelled = false;
+    getTasks({ status: "completed" })
+      .then(({ items }) => {
+        if (cancelled) return;
+        if (!items.length) {
+          router.replace("/history");
+          return;
+        }
+        const latest = [...items].sort((a, b) =>
+          a.createdAt < b.createdAt ? 1 : -1,
+        )[0];
+        router.replace(`/detail?taskId=${encodeURIComponent(latest.id)}`);
+      })
+      .catch(() => {
+        if (!cancelled) router.replace("/history");
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [taskId, router]);
 
   useEffect(() => {
