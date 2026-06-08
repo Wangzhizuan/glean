@@ -24,6 +24,7 @@
 
 .grid--content-sidebar {
   grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.6fr);
+  align-items: start;
 }
 
 .muted {
@@ -358,4 +359,254 @@
     left: 12px;
     text-align: center;
   }
+}
+
+/* ── 一键生图弹窗（方案 A：弹窗 + 侧边小窗） ───────────────── */
+.imagegen-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: rgb(20 20 19 / 38%);
+  backdrop-filter: blur(6px);
+  animation: imagegen-fade var(--motion-base) var(--ease-standard);
+}
+
+@keyframes imagegen-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.imagegen-dialog {
+  width: min(760px, 100%);
+  max-height: 88vh;
+  overflow-y: auto;
+  gap: var(--space-4);
+  box-shadow: var(--shadow-raised);
+}
+
+.imagegen-dialog__head {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.imagegen-dialog__close {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--color-muted);
+  font-size: var(--text-xl);
+  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-standard);
+}
+
+.imagegen-dialog__close:hover {
+  background: var(--color-surface-warm);
+}
+
+.imagegen-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.imagegen-field--grow {
+  flex: 1;
+}
+
+.imagegen-field__label {
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.imagegen-row {
+  gap: var(--space-3);
+}
+
+.imagegen-textarea,
+.imagegen-select {
+  width: 100%;
+  padding: var(--space-3);
+  color: var(--color-text);
+  font: inherit;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  resize: vertical;
+}
+
+.imagegen-textarea:focus-visible,
+.imagegen-select:focus-visible {
+  border-color: var(--color-accent);
+}
+
+.imagegen-preview > summary {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.imagegen-preview__body {
+  margin-top: var(--space-2);
+  max-height: 180px;
+  overflow-y: auto;
+  padding: var(--space-3);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--color-surface-warm);
+  border-radius: var(--radius-sm);
+}
+
+.imagegen-actions {
+  gap: var(--space-3);
+}
+
+.imagegen-hint {
+  color: var(--color-meta);
+  font-size: var(--text-sm);
+}
+
+/* ── 一键生图弹窗:三类方案分组 ───────────────── */
+.imagegen-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+}
+
+.imagegen-group__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text);
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.imagegen-group__toggle {
+  align-self: flex-start;
+  padding: 0;
+  color: var(--color-text);
+  font-size: var(--text-base);
+  font-weight: 600;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.imagegen-tag {
+  padding: 2px var(--space-2);
+  color: var(--color-accent-on);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  background: var(--color-accent);
+  border-radius: var(--radius-pill);
+}
+
+.imagegen-tag--quiet {
+  color: var(--color-muted);
+  background: var(--color-surface-warm);
+}
+
+.imagegen-search {
+  gap: var(--space-3);
+}
+
+.imagegen-template-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.imagegen-template {
+  flex: 1;
+  overflow-x: auto;
+  padding: var(--space-2) var(--space-3);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  background: var(--color-surface-warm);
+  border-radius: var(--radius-sm);
+}
+
+.imagegen-copy {
+  flex-shrink: 0;
+}
+
+/* 画面风格 / 画面比例 的「快捷指令」标签(记忆历史选择) */
+.imagegen-recent {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.imagegen-recent__chip {
+  padding: 2px var(--space-3);
+  color: var(--color-muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  background: var(--color-surface-warm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+/* 手动模式:当前内容是「短/长」的状态提示条 */
+.imagegen-status {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  border-radius: var(--radius-md);
+}
+
+.imagegen-status__dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: var(--radius-pill);
+}
+
+.imagegen-status--short {
+  color: color-mix(in oklab, var(--color-success), black 18%);
+  background: color-mix(in oklab, var(--color-success), transparent 90%);
+}
+
+.imagegen-status--short .imagegen-status__dot {
+  background: var(--color-success);
+}
+
+.imagegen-status--long {
+  color: color-mix(in oklab, var(--color-warning), black 32%);
+  background: color-mix(in oklab, var(--color-warning), transparent 86%);
+}
+
+.imagegen-status--long .imagegen-status__dot {
+  background: var(--color-warning);
 }

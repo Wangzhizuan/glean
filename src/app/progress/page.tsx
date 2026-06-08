@@ -256,23 +256,20 @@ function TaskRow({
   return (
     <div className="task">
       <div className="row row--between task__header">
-        <div className="row">
-          <div className="task__thumb">{platformLabel}</div>
-          <div>
-            <b>{task.title}</b>
-            <p className="meta">
-              {platformLabel}
-              {!isArticle && ` · ${formatDuration(task.durationMs)}`}
-            </p>
-            <a
-              className="source-link"
-              href={task.canonicalUrl || task.sourceUrl}
-              rel="noreferrer"
-              target="_blank"
-            >
-              {isArticle ? "打开原文" : "打开原视频"} ↗
-            </a>
-          </div>
+        <div>
+          <b>{task.title}</b>
+          <p className="meta">
+            {platformLabel}
+            {!isArticle && ` · ${formatDuration(task.durationMs)}`}
+          </p>
+          <a
+            className="source-link"
+            href={task.canonicalUrl || task.sourceUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            {isArticle ? "打开原文" : "打开原视频"} ↗
+          </a>
         </div>
         <div className="row task__status">
           <Badge tone={cancelled ? "neutral" : badgeTone}>

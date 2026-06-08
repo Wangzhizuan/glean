@@ -7,6 +7,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { PageHero } from "@/components/layout/page-hero";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ImageGenDialog } from "@/components/features/image-gen-dialog";
 import { exportUrl, getTaskResult, getTasks } from "@/lib/api";
 import type { TaskResult } from "@/lib/api-types";
 import {
@@ -45,6 +46,7 @@ function DetailContent() {
   const [activeTab, setActiveTab] = useState<TabId>("summary");
   const [result, setResult] = useState<TaskResult | null>(null);
   const [loading, setLoading] = useState(Boolean(taskId));
+  const [imageDialogOpen, setImageDialogOpen] = useState(false);
   const { message, showToast } = useToast();
 
   // 直接访问 /detail 但没有 taskId 时，自动跳到最新一条已完成的文案；
@@ -111,6 +113,17 @@ function DetailContent() {
     }
   }
 
+  async function copyTranscript() {
+    if (!result) return;
+    const asArticle = result.metadata.kind === "article";
+    try {
+      await navigator.clipboard.writeText(result.transcript.plainText);
+      showToast(asArticle ? "已复制正文" : "已复制逐字稿");
+    } catch {
+      showToast("复制失败，请手动选择文本");
+    }
+  }
+
   function exportArticle(format: "txt" | "md" | "json") {
     if (!taskId) return;
     const anchor = document.createElement("a");
@@ -156,8 +169,14 @@ function DetailContent() {
         <PageHero
           action={
             <div className="row row--mobile-stack detail-actions">
+              <Button onClick={() => setImageDialogOpen(true)}>
+                🎨 一键生图
+              </Button>
               <Button onClick={copyArticle} variant="secondary">
                 复制整篇
+              </Button>
+              <Button onClick={copyTranscript} variant="secondary">
+                {isArticle ? "复制正文" : "复制逐字稿"}
               </Button>
               <Button onClick={() => exportArticle("txt")} variant="quiet">
                 TXT
@@ -334,6 +353,13 @@ function DetailContent() {
           )}
         </Card>
       </section>
+      <ImageGenDialog
+        key={imageDialogOpen ? "image-dialog-open" : "image-dialog-closed"}
+        onClose={() => setImageDialogOpen(false)}
+        onNotice={showToast}
+        open={imageDialogOpen}
+        result={result}
+      />
       <Toast message={message} />
     </AppShell>
   );

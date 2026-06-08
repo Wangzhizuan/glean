@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "拾句 · 一键生图助手",
+  "version": "1.0.0",
+  "description": "在 ChatGPT / Gemini 官网自动填入并发送来自「拾句」的生图 prompt，复用已登录会员态，不走 API。",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://gemini.google.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+      "js": ["content-chatgpt.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["content-gemini.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
