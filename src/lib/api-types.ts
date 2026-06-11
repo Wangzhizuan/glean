@@ -2,6 +2,7 @@ export type Platform =
   | "bilibili"
   | "youtube"
   | "douyin"
+  | "xiaoyuzhou"
   | "wechat"
   | "xiaohongshu"
   | "feishu"
@@ -47,6 +48,16 @@ export interface Capabilities {
     browserCookie3: CapabilityDependency;
     lxml: CapabilityDependency;
     larkCli: CapabilityDependency;
+  };
+  feishu?: {
+    ready: boolean;
+    larkCli: { available: boolean };
+    browserCookies: {
+      available: boolean;
+      count: number;
+      error: string | null;
+    };
+    message: string | null;
   };
   platforms: Platform[];
   sources?: Platform[];

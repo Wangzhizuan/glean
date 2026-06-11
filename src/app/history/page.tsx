@@ -137,6 +137,7 @@ export default function HistoryPage() {
                 <option value="douyin">抖音</option>
                 <option value="bilibili">Bilibili</option>
                 <option value="youtube">YouTube</option>
+                <option value="xiaoyuzhou">小宇宙</option>
                 <option value="wechat">微信公众号</option>
                 <option value="xiaohongshu">小红书</option>
                 <option value="feishu">飞书文档</option>

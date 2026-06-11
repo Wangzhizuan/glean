@@ -22,6 +22,7 @@ import subprocess
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -75,8 +76,69 @@ def article_capabilities() -> Dict[str, Dict[str, bool]]:
         "curlCffi": {"available": importlib.util.find_spec("curl_cffi") is not None},
         "browserCookie3": {"available": importlib.util.find_spec("browser_cookie3") is not None},
         "lxml": {"available": importlib.util.find_spec("lxml") is not None},
-        "larkCli": {"available": shutil.which("lark-cli") is not None},
+        "larkCli": {"available": _find_lark_cli() is not None},
     }
+
+
+def feishu_readiness() -> Dict[str, Any]:
+    """Report whether the box is configured to read Feishu docs at all.
+
+    The frontend uses this to surface a clear warning before the user submits
+    a Feishu URL, instead of letting the task fail silently. Both fields can
+    independently make Feishu work; we only consider the platform "ready" if
+    at least one is usable.
+
+    - ``larkCli``: an authenticated ``lark-cli``/``lark`` binary on PATH.
+    - ``browserCookies``: at least one Feishu/Lark cookie is reachable from
+      the local Chrome cookie store via ``browser_cookie3``.
+    """
+    lark_cli_ok = _find_lark_cli() is not None
+    cookie_count = 0
+    cookie_error: Optional[str] = None
+    if importlib.util.find_spec("browser_cookie3") is not None:
+        try:
+            cookie_count = len(
+                _load_browser_cookies(["feishu.cn", "larkoffice.com", "feishu-pre.cn"])
+            )
+        except Exception as e:  # noqa: BLE001
+            cookie_error = str(e)[:200]
+    cookies_ok = cookie_count > 0
+    ready = lark_cli_ok or cookies_ok
+    if ready:
+        message = None
+    elif lark_cli_ok is False and cookies_ok is False:
+        message = (
+            "未检测到 lark-cli，也未在本机 Chrome 找到飞书登录态，"
+            "飞书文档将无法识别。请二选一：\n"
+            "1) `npm i -g @larksuite/cli && lark-cli auth login`；\n"
+            "2) 在本机 Chrome 登录飞书并访问过该文档。"
+        )
+    else:
+        message = None
+    return {
+        "ready": ready,
+        "larkCli": {"available": lark_cli_ok},
+        "browserCookies": {
+            "available": cookies_ok,
+            "count": cookie_count,
+            "error": cookie_error,
+        },
+        "message": message,
+    }
+
+
+def _find_lark_cli() -> Optional[str]:
+    """Locate any installed Lark CLI binary.
+
+    Different distributions expose the CLI as ``lark-cli`` (npm) or ``lark``
+    (Go binary). Returns the first absolute path found, or ``None`` if neither
+    is on PATH.
+    """
+    for name in ("lark-cli", "lark"):
+        path = shutil.which(name)
+        if path:
+            return path
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -135,8 +197,14 @@ def _render_with_playwright(
     wait_selector: Optional[str] = None,
     cookies: Optional[List[Dict[str, Any]]] = None,
     timeout_ms: int = 20000,
+    scroll_for_lazy: bool = False,
 ) -> Dict[str, str]:
-    """Render a URL with headless Chromium and return {html, text, title, final_url}."""
+    """Render a URL with headless Chromium and return {html, text, title, final_url}.
+
+    When ``scroll_for_lazy`` is true, the page is scrolled to the bottom in
+    increments so that virtualized content (e.g. Feishu Docs blocks) is
+    materialised before we extract HTML/text.
+    """
     if importlib.util.find_spec("playwright") is None:
         raise ArticleError(
             "ARTICLE_DEP_MISSING",
@@ -164,6 +232,20 @@ def _render_with_playwright(
                     page.wait_for_selector(wait_selector, timeout=timeout_ms)
                 except Exception:  # noqa: BLE001
                     pass
+            if scroll_for_lazy:
+                try:
+                    last_height = 0
+                    for _ in range(40):
+                        page.evaluate(
+                            "() => window.scrollTo(0, document.body.scrollHeight)"
+                        )
+                        page.wait_for_timeout(400)
+                        height = page.evaluate("() => document.body.scrollHeight")
+                        if height == last_height:
+                            break
+                        last_height = height
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("scroll for lazy load failed: %s", e)
             html = page.content()
             try:
                 text = page.inner_text("body") or ""
@@ -315,86 +397,109 @@ def _extract_wechat(url: str) -> ArticleResult:
 
 
 def _fetch_feishu_with_lark_cli(url: str) -> Optional[Dict[str, Any]]:
-    """Fetch a Feishu/Lark doc via the official `lark-cli` binary.
+    """Fetch a Feishu/Lark doc via the official ``lark-cli`` (or ``lark``) binary.
 
-    Returns a dict with title/markdown/text/canonical_url on success, or None
-    if lark-cli is unavailable / unauthenticated / target doc is inaccessible.
+    Returns a dict with ``title``/``markdown``/``text``/``canonical_url`` on
+    success, or ``None`` if no Lark CLI is available, the user is not
+    authenticated, or the target document cannot be accessed.
+
+    The npm-distributed ``@larksuite/cli`` exposes ``lark-cli docs +fetch``,
+    while the Go-binary ``lark`` distribution uses ``lark doc fetch``. Both
+    are tried in turn. We capture stdout as JSON when possible; otherwise we
+    accept raw markdown directly.
     """
-    binary = shutil.which("lark-cli")
+    binary = _find_lark_cli()
     if not binary:
         return None
-    try:
-        result = subprocess.run(
-            [
-                binary,
-                "docs",
-                "+fetch",
-                "--api-version",
-                "v2",
-                "--doc",
-                url,
-                "--doc-format",
-                "markdown",
-                "--format",
-                "json",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-    except (subprocess.TimeoutExpired, OSError) as e:
-        logger.warning("lark-cli timed out / failed to spawn: %s", e)
-        return None
 
-    if result.returncode != 0:
-        stderr = (result.stderr or "").strip()
-        logger.warning("lark-cli docs +fetch failed: %s", stderr[:300])
-        return None
+    binary_name = Path(binary).name
 
-    raw = (result.stdout or "").strip()
-    if not raw:
-        return None
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        # Some lark-cli paths print a leading banner. Try to find the JSON body.
-        match = re.search(r"\{[\s\S]*\}", raw)
-        if not match:
-            return None
+    candidate_argv: List[List[str]] = []
+    if binary_name == "lark-cli":
+        candidate_argv.append([
+            binary, "docs", "+fetch",
+            "--api-version", "v2",
+            "--doc", url,
+            "--doc-format", "markdown",
+            "--format", "json",
+        ])
+        candidate_argv.append([
+            binary, "doc", "fetch",
+            "--url", url,
+            "--format", "markdown",
+        ])
+    else:
+        # Go binary `lark`
+        candidate_argv.append([binary, "doc", "fetch", "--url", url, "--format", "markdown"])
+        candidate_argv.append([binary, "docs", "+fetch", "--doc", url, "--doc-format", "markdown", "--format", "json"])
+
+    for argv in candidate_argv:
         try:
-            data = json.loads(match.group(0))
-        except json.JSONDecodeError:
-            return None
+            result = subprocess.run(
+                argv, capture_output=True, text=True, timeout=60,
+            )
+        except (subprocess.TimeoutExpired, OSError) as e:
+            logger.warning("lark CLI %s timed out / failed: %s", argv[:3], e)
+            continue
+        if result.returncode != 0:
+            stderr = (result.stderr or "").strip()
+            logger.warning("lark CLI %s failed: %s", argv[:3], stderr[:300])
+            continue
 
-    # lark-cli wraps the API payload; try common locations.
-    payload = data.get("data") if isinstance(data, dict) else None
-    payload = payload or data
-    markdown = ""
-    title = ""
-    if isinstance(payload, dict):
-        markdown = (
-            payload.get("content")
-            or payload.get("markdown")
-            or payload.get("body")
-            or ""
-        )
-        title = (
-            payload.get("title")
-            or (payload.get("document") or {}).get("title", "")
-            or ""
-        )
-    if not markdown:
-        return None
-    # Plain text = strip markdown formatting roughly.
-    text = re.sub(r"`{1,3}[^`]*`{1,3}", "", markdown)
-    text = re.sub(r"!?\[[^\]]*\]\([^)]*\)", "", text)
-    text = re.sub(r"[#*_>`-]+", " ", text)
-    text = re.sub(r"\n{3,}", "\n\n", text).strip()
-    return {
-        "title": title.strip() or "飞书文档",
-        "markdown": markdown.strip(),
-        "text": text,
-    }
+        raw = (result.stdout or "").strip()
+        if not raw:
+            continue
+
+        # Try JSON first.
+        data: Any = None
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            match = re.search(r"\{[\s\S]*\}", raw)
+            if match:
+                try:
+                    data = json.loads(match.group(0))
+                except json.JSONDecodeError:
+                    data = None
+
+        markdown = ""
+        title = ""
+        if isinstance(data, dict):
+            payload = data.get("data") if isinstance(data.get("data"), dict) else data
+            if isinstance(payload, dict):
+                markdown = (
+                    payload.get("content")
+                    or payload.get("markdown")
+                    or payload.get("body")
+                    or ""
+                )
+                title = (
+                    payload.get("title")
+                    or (payload.get("document") or {}).get("title", "")
+                    or ""
+                )
+
+        if not markdown:
+            # Accept raw markdown stdout as a fallback.
+            looks_markdown = ("\n" in raw and (raw.lstrip().startswith("#") or len(raw) > 200))
+            if looks_markdown:
+                markdown = raw
+            else:
+                continue
+
+        text = re.sub(r"`{1,3}[^`]*`{1,3}", "", markdown)
+        text = re.sub(r"!?\[[^\]]*\]\([^)]*\)", "", text)
+        text = re.sub(r"[#*_>`-]+", " ", text)
+        text = re.sub(r"\n{3,}", "\n\n", text).strip()
+        if _word_count(text) < 40:
+            continue
+        return {
+            "title": (title or "").strip() or "飞书文档",
+            "markdown": markdown.strip(),
+            "text": text,
+        }
+
+    return None
 
 
 def _extract_feishu(url: str) -> ArticleResult:
@@ -429,7 +534,8 @@ def _extract_feishu(url: str) -> ArticleResult:
             url,
             wait_selector=wait_selector,
             cookies=cookies,
-            timeout_ms=25000,
+            timeout_ms=30000,
+            scroll_for_lazy=True,
         )
     except ArticleError:
         raise
@@ -453,7 +559,14 @@ def _extract_feishu(url: str) -> ArticleResult:
     except ArticleError:
         extracted = {}
 
-    final_text = (extracted.get("text") or text_body).strip()
+    # Prefer trafilatura when it returns a substantial body; otherwise fall
+    # back to the visible body text rendered by Playwright (it covers Feishu
+    # Docs blocks that trafilatura's heuristics tend to skip).
+    candidate_texts = [
+        (extracted.get("text") or "").strip(),
+        text_body,
+    ]
+    final_text = max(candidate_texts, key=_word_count)
 
     if _word_count(final_text) < 40:
         raise ArticleError(
@@ -462,11 +575,19 @@ def _extract_feishu(url: str) -> ArticleResult:
             "或确认你对该文档有访问权限。",
         )
 
+    # Clean up the visible-body text (it includes UI chrome); trim leading
+    # navigation lines if present.
+    final_text = re.sub(r"\n{3,}", "\n\n", final_text).strip()
+
+    final_title = extracted.get("title") or title or "飞书文档"
+    # Strip the trailing " - 飞书云文档" that the browser tab title carries.
+    final_title = re.sub(r"\s*[-|·]\s*飞书.*$", "", final_title).strip() or "飞书文档"
+
     return ArticleResult(
         source="feishu",
         source_url=url,
         canonical_url=final_url,
-        title=extracted.get("title") or title or "飞书文档",
+        title=final_title,
         author=extracted.get("author"),
         published_at=extracted.get("date"),
         plain_text=final_text,

@@ -25,6 +25,11 @@ const PLATFORM_HOSTS: Array<{
     matches: (host) =>
       host === "douyin.com" || host.endsWith(".douyin.com"),
   },
+  {
+    platform: "xiaoyuzhou",
+    matches: (host) =>
+      host === "xiaoyuzhoufm.com" || host.endsWith(".xiaoyuzhoufm.com"),
+  },
 ];
 
 const ARTICLE_HOSTS: Array<{

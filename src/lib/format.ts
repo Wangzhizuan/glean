@@ -4,6 +4,7 @@ export const platformLabels: Record<Platform, string> = {
   bilibili: "Bilibili",
   youtube: "YouTube",
   douyin: "抖音",
+  xiaoyuzhou: "小宇宙",
   wechat: "微信公众号",
   xiaohongshu: "小红书",
   feishu: "飞书文档",

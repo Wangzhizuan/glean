@@ -71,4 +71,4 @@ scripts/
 - 本地完整开发使用 `npm run dev:all`，不要只启动 Next.js 后误判 API 不可用。
 - 前端统一通过 `src/lib/api.ts` 调用 `127.0.0.1:8787/api`，可用 `NEXT_PUBLIC_SHIJU_API_URL` 覆盖；`/local-api` rewrite 保留给同源部署场景。
 - 后端 schema、状态机和 API 字段需与 `docs/local-video-copy-backend-technical-design.md` 保持一致。
-- 当前默认 `SHIJU_PROCESSOR_MODE=demo`。真实媒体处理必须继续实现 `backend/app/main.py` 中的 `TODO(real-processing)`，不得将演示结果描述为真实识别结果。
+- 当前默认 `SHIJU_PROCESSOR_MODE=real`。真实媒体处理走 `backend/app/pipeline.py` 与 `backend/app/article.py`；当依赖缺失或无法识别时，必须以失败任务的形式如实暴露错误信息，不得伪造识别结果。`SHIJU_PROCESSOR_MODE=demo`（即 `npm run dev:demo`）仅用于无依赖环境下跑通 UI 流程，结果必须明确标记为占位、不得呈现为真实识别。

@@ -95,6 +95,14 @@ export default function SubmitPage() {
   }
 
   const isDemo = capabilities?.processorMode === "demo";
+  const feishuReadiness = capabilities?.feishu;
+  const hasFeishuLink = links.some(
+    (value) => detectSourcePlatform(value) === "feishu",
+  );
+  const showFeishuWarning =
+    !isDemo &&
+    feishuReadiness !== undefined &&
+    feishuReadiness.ready === false;
 
   return (
     <AppShell
@@ -113,7 +121,7 @@ export default function SubmitPage() {
                 : "正在连接本地服务"}
             </Badge>
           }
-          description="粘贴 1–10 条视频或文章链接，支持抖音、Bilibili、YouTube、微信公众号、小红书、飞书文档以及任意网页。任务和生成结果会保存到当前 Mac 本机。"
+          description="粘贴 1–10 条视频或文章链接，支持抖音、Bilibili、YouTube、小宇宙、微信公众号、小红书、飞书文档以及任意网页。任务和生成结果会保存到当前 Mac 本机。"
           eyebrow="从视频与文章到可用文字"
           title="把值得反复看的内容，变成随时可用的文案。"
         />
@@ -122,6 +130,29 @@ export default function SubmitPage() {
             <b>当前为演示处理模式</b>
             <span>
               任务、进度、历史、详情和导出均可完整运行，但不会下载或识别链接中的真实视频。
+            </span>
+          </div>
+        )}
+        {showFeishuWarning && (
+          <div
+            className={
+              hasFeishuLink
+                ? "system-notice system-notice--error"
+                : "system-notice system-notice--warning"
+            }
+          >
+            <b>飞书文档识别尚未就绪</b>
+            <span style={{ whiteSpace: "pre-line" }}>
+              {feishuReadiness?.message ??
+                "未检测到 lark-cli，也未在本机 Chrome 找到飞书登录态。"}
+            </span>
+            <span className="meta">
+              当前状态 · lark-cli：
+              {feishuReadiness?.larkCli.available ? "已安装" : "未安装"} · Chrome
+              飞书 cookies：
+              {feishuReadiness?.browserCookies.available
+                ? `已读取 ${feishuReadiness.browserCookies.count} 条`
+                : "未找到"}
             </span>
           </div>
         )}
@@ -216,6 +247,14 @@ export default function SubmitPage() {
               <CapabilityLine
                 available={capabilities?.article?.larkCli.available}
                 label="lark-cli 飞书文档"
+              />
+              <CapabilityLine
+                available={capabilities?.feishu?.browserCookies.available}
+                label="Chrome 飞书登录态"
+              />
+              <CapabilityLine
+                available={capabilities?.feishu?.ready}
+                label="飞书文档整体就绪"
               />
             </Card>
           </aside>

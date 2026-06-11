@@ -50,6 +50,9 @@ SUPPORTED_HOSTS = {
     "douyin.com": "douyin",
     "www.douyin.com": "douyin",
     "v.douyin.com": "douyin",
+    # 小宇宙播客 (yt-dlp 的 generic 抽取器可识别 m4a 媒体地址)
+    "xiaoyuzhoufm.com": "xiaoyuzhou",
+    "www.xiaoyuzhoufm.com": "xiaoyuzhou",
 }
 ARTICLE_HOSTS = {
     "mp.weixin.qq.com": "wechat",
@@ -62,6 +65,7 @@ PLATFORM_LABELS = {
     "bilibili": "Bilibili",
     "youtube": "YouTube",
     "douyin": "抖音",
+    "xiaoyuzhou": "小宇宙",
     "wechat": "微信公众号",
     "xiaohongshu": "小红书",
     "feishu": "飞书文档",
@@ -331,214 +335,69 @@ def update_batch_counts(connection: sqlite3.Connection, batch_id: str) -> None:
     )
 
 
-DEMO_CONTENT = {
-    "overview": "这段视频系统讨论了如何把零散的信息输入转化为可长期积累、能够在真实任务中调用的个人知识系统。内容从无目标收藏的问题出发，解释了问题驱动输入、主动转述和真实调用三者之间的关系。视频强调，知识管理的核心不是工具或收藏数量，而是能否形成从问题到行动的闭环。最终目标是让笔记成为写作、决策和沟通时可以复用的思考资产。",
-    "coreThesis": "个人知识系统的价值不在于存储更多资料，而在于围绕真实问题完成输入、理解、压缩和调用的循环，并让每一次输入最终影响行动。",
-    "detailedSummary": "视频首先指出，许多人每天接触大量信息，却很少真正留下可调用的理解，原因通常不是输入不足，而是输入前没有明确问题。没有问题约束的收藏会不断堆积，最终形成缺少索引和使用场景的资料仓库。随后，视频提出主动转述是从保存信息到理解信息的关键步骤：看完内容后，应当用自己的语言写出结论、依据以及它可能改变的行动。最后，视频将知识系统放回真实任务中检验，强调笔记只有在文章、方案、讨论和决策中被再次调用，才会真正转化为能力。整套方法可以概括为问题、输入、转述、调用四个连续环节。",
-    "keyPoints": [
-        {
-            "title": "先提出问题，再开始输入",
-            "content": "带着具体问题阅读或观看，可以减少无目标的信息消费。",
-        },
-        {
-            "title": "用自己的语言完成压缩",
-            "content": "摘抄只是保存，转述才代表理解。",
-        },
-        {
-            "title": "让笔记进入真实任务",
-            "content": "知识需要在写作、决策或讨论中被调用，才能转化为能力。",
-        },
-        {
-            "title": "收藏不等于理解",
-            "content": "资料数量只代表保存行为，只有经过筛选、转述和关联，信息才会变成个人理解。",
-        },
-        {
-            "title": "建立最小学习闭环",
-            "content": "从问题出发，完成输入、转述和调用，比搭建复杂工具体系更重要。",
-        },
-        {
-            "title": "用输出检验输入质量",
-            "content": "能否在文章、方案或讨论中复用一个观点，是判断输入是否真正有效的标准。",
-        },
-    ],
-    "contentStructure": [
-        {"section": "问题提出", "summary": "解释信息摄入很多但有效积累很少的常见困境。"},
-        {"section": "问题驱动输入", "summary": "说明先确定问题如何减少无效收藏。"},
-        {"section": "主动转述", "summary": "介绍用自己的语言压缩结论、依据和行动的方法。"},
-        {"section": "真实任务调用", "summary": "讨论笔记如何在写作、决策和沟通中转化为能力。"},
-        {"section": "闭环总结", "summary": "将方法归纳为问题、输入、转述和调用四个环节。"},
-    ],
-    "actionItems": [
-        "选择一个本周正在解决的问题",
-        "每天只收集三条直接相关的材料",
-        "周末整理成一页主题笔记并在输出中引用",
-        "每次收藏前写下这条信息要解决的具体问题",
-        "看完内容后用三句话记录结论、依据和下一步行动",
-        "每周删除或归档没有明确使用场景的收藏",
-    ],
-    "targetAudience": [
-        "收藏很多资料但很少回看的知识工作者",
-        "希望改善阅读、学习和笔记流程的内容创作者",
-        "需要在写作、方案和决策中快速调用资料的人",
-    ],
-    "terms": [
-        {"term": "问题驱动输入", "explanation": "先明确需要解决的问题，再有选择地获取信息。"},
-        {"term": "主动转述", "explanation": "不用原文摘抄代替理解，而是用自己的语言重新表达。"},
-        {"term": "知识调用", "explanation": "在真实任务中找到并使用过去积累的观点和材料。"},
-    ],
-    "conclusions": [
-        "收藏数量不能代表知识积累质量。",
-        "转述是信息从外部资料变成个人理解的关键步骤。",
-        "知识只有进入真实行动和输出，才能转化为长期能力。",
-        "简单而持续的闭环优于复杂但不使用的工具系统。",
-    ],
-}
-
-DEMO_SEGMENTS = [
-    (0, 14000, "我们每天都会看到很多信息，但真正能留下来的非常少。"),
-    (14000, 42000, "问题往往不是输入不够，而是输入之前没有明确自己想解决什么。"),
-    (42000, 76000, "收藏夹更像一个没有索引的仓库，你需要把内容放回一个具体问题里。"),
-    (76000, 112000, "看完一段内容后，用三句话写出结论、依据，以及它会改变哪个行动。"),
-    (112000, 146000, "笔记系统的价值，是在写文章、做方案和讨论时找到已经思考过的东西。"),
-    (146000, 178000, "最小的闭环是问题、输入、转述和调用，只要循环起来，知识系统就会生长。"),
-]
+DEMO_NOTICE = (
+    "演示模式：未真正下载或识别该链接。请用 `npm run dev:real` 启动真实处理模式后重试。"
+)
 
 
 def build_demo_result(task: sqlite3.Row) -> Dict[str, Any]:
+    """Return a clearly-labelled placeholder so the UI can be exercised without
+    real ASR/LLM dependencies. The content here intentionally avoids
+    fabricating any details about the source URL.
+    """
+    kind = task["kind"] if "kind" in task.keys() else "video"
+    platform = task["platform"]
+    platform_label = PLATFORM_LABELS.get(platform, platform)
+    placeholder_text = (
+        f"演示模式占位：未识别 {platform_label} 链接的真实内容。\n"
+        "若要查看真实的逐字稿或正文，请先停止当前服务，"
+        "改用 `npm run dev:real` 启动真实处理模式（需安装 ffmpeg、yt-dlp、"
+        "mlx-whisper 与 Ollama）。"
+    )
     segments = [
         {
-            "index": index,
-            "startMs": start,
-            "endMs": end,
-            "text": text,
+            "index": 0,
+            "startMs": 0,
+            "endMs": 0,
+            "text": placeholder_text,
         }
-        for index, (start, end, text) in enumerate(DEMO_SEGMENTS)
     ]
-    plain_text = "".join(segment["text"] for segment in segments)
+    summary = {
+        "overview": DEMO_NOTICE,
+        "coreThesis": "",
+        "detailedSummary": placeholder_text,
+        "keyPoints": [],
+        "contentStructure": [],
+        "actionItems": [],
+        "targetAudience": [],
+        "terms": [],
+        "conclusions": [],
+    }
     return {
         "taskId": task["id"],
         "metadata": {
-            "kind": task["kind"] if "kind" in task.keys() else "video",
-            "platform": task["platform"],
-            "platformLabel": PLATFORM_LABELS.get(task["platform"], task["platform"]),
-            "title": task["title"],
+            "kind": kind,
+            "platform": platform,
+            "platformLabel": platform_label,
+            "title": task["title"] or f"{platform_label} 演示占位（未识别真实内容）",
             "author": task["author"],
-            "durationMs": task["duration_ms"],
+            "durationMs": task["duration_ms"] or 0,
             "publishedAt": None,
             "generatedAt": utc_now(),
             "sourceUrl": task["source_url"],
         },
         "transcript": {
-            "source": "demo_local",
+            "source": "demo_placeholder",
             "language": "zh",
-            "wordCount": len(plain_text),
-            "plainText": plain_text,
+            "wordCount": len(placeholder_text),
+            "plainText": placeholder_text,
             "segments": segments,
         },
-        "summary": DEMO_CONTENT,
-        "quotes": [
-            {
-                "text": "收藏只是把信息留下，转述才是把理解留下。",
-                "startMs": 42000,
-                "endMs": 76000,
-                "sourceSegmentIds": [2],
-                "isPolished": True,
-            },
-            {
-                "text": "知识系统的价值，在于需要时能否被调用。",
-                "startMs": 112000,
-                "endMs": 146000,
-                "sourceSegmentIds": [4],
-                "isPolished": True,
-            },
-            {
-                "text": "先有问题，再有输入；先有转述，再有积累。",
-                "startMs": 14000,
-                "endMs": 42000,
-                "sourceSegmentIds": [1],
-                "isPolished": True,
-            },
-            {
-                "text": "输入之前没有问题，输入之后通常也不会留下答案。",
-                "startMs": 14000,
-                "endMs": 42000,
-                "sourceSegmentIds": [1],
-                "isPolished": True,
-            },
-            {
-                "text": "收藏夹更像没有索引的仓库，而不是已经掌握的知识。",
-                "startMs": 42000,
-                "endMs": 76000,
-                "sourceSegmentIds": [2],
-                "isPolished": True,
-            },
-            {
-                "text": "摘抄完成的是保存，转述完成的才是理解。",
-                "startMs": 76000,
-                "endMs": 112000,
-                "sourceSegmentIds": [3],
-                "isPolished": True,
-            },
-            {
-                "text": "每次输入都应该回答三个问题：结论是什么，依据是什么，行动会怎样改变。",
-                "startMs": 76000,
-                "endMs": 112000,
-                "sourceSegmentIds": [3],
-                "isPolished": True,
-            },
-            {
-                "text": "笔记不是为了看起来完整，而是为了需要时能够被找到。",
-                "startMs": 112000,
-                "endMs": 146000,
-                "sourceSegmentIds": [4],
-                "isPolished": True,
-            },
-            {
-                "text": "知识系统最终要接受真实任务的检验。",
-                "startMs": 112000,
-                "endMs": 146000,
-                "sourceSegmentIds": [4],
-                "isPolished": True,
-            },
-            {
-                "text": "能在写作、决策和讨论中被调用的内容，才真正属于你。",
-                "startMs": 112000,
-                "endMs": 146000,
-                "sourceSegmentIds": [4],
-                "isPolished": True,
-            },
-            {
-                "text": "工具不会自动形成知识，循环才会。",
-                "startMs": 146000,
-                "endMs": 178000,
-                "sourceSegmentIds": [5],
-                "isPolished": True,
-            },
-            {
-                "text": "最小的学习闭环，是让一个观点改变下一次行动。",
-                "startMs": 146000,
-                "endMs": 178000,
-                "sourceSegmentIds": [5],
-                "isPolished": True,
-            },
-            {
-                "text": "问题决定输入的方向，调用决定积累的价值。",
-                "startMs": 146000,
-                "endMs": 178000,
-                "sourceSegmentIds": [5],
-                "isPolished": True,
-            },
-            {
-                "text": "简单但持续运行的系统，胜过复杂却从不使用的系统。",
-                "startMs": 146000,
-                "endMs": 178000,
-                "sourceSegmentIds": [5],
-                "isPolished": True,
-            },
-        ],
+        "summary": summary,
+        "quotes": [],
         "processor": {
             "mode": "demo",
-            "notice": "当前结果由本地演示处理器生成，未下载或识别真实视频。",
+            "notice": DEMO_NOTICE,
         },
     }
 
@@ -1143,7 +1002,7 @@ def health() -> Dict[str, Any]:
 
 @app.get("/api/capabilities")
 def capabilities() -> Dict[str, Any]:
-    from .article import article_capabilities
+    from .article import article_capabilities, feishu_readiness
 
     dependencies = {
         "ffmpeg": dependency_status("ffmpeg"),
@@ -1152,6 +1011,7 @@ def capabilities() -> Dict[str, Any]:
         "ollama": ollama_status(),
     }
     article = article_capabilities()
+    feishu = feishu_readiness()
     real_ready = all(
         [
             dependencies["ffmpeg"]["available"],
@@ -1165,8 +1025,9 @@ def capabilities() -> Dict[str, Any]:
         "processorMode": PROCESSOR_MODE,
         "dependencies": dependencies,
         "article": article,
-        "platforms": ["douyin", "bilibili", "youtube"],
-        "sources": ["douyin", "bilibili", "youtube", "wechat", "xiaohongshu", "feishu", "web"],
+        "feishu": feishu,
+        "platforms": ["douyin", "bilibili", "youtube", "xiaoyuzhou"],
+        "sources": ["douyin", "bilibili", "youtube", "xiaoyuzhou", "wechat", "xiaohongshu", "feishu", "web"],
         "notice": (
             "演示处理器已启用，可跑通任务、进度、结果与导出；不会读取真实视频。"
             if PROCESSOR_MODE == "demo"

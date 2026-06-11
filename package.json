@@ -6,6 +6,7 @@
     "dev": "next dev",
     "dev:all": "sh scripts/dev.sh",
     "dev:real": "SHIJU_PROCESSOR_MODE=real sh scripts/dev.sh",
+    "dev:demo": "SHIJU_PROCESSOR_MODE=demo sh scripts/dev.sh",
     "backend": "PATH=\"$HOME/Library/Python/3.9/bin:$PATH\" python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8787 --reload --app-dir backend",
     "backend:real": "PATH=\"$HOME/Library/Python/3.9/bin:$PATH\" SHIJU_PROCESSOR_MODE=real python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8787 --reload --app-dir backend",
     "build": "next build",

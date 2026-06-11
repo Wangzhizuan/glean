@@ -13,7 +13,7 @@ else
   export PATH="$HOME/Library/Python/3.9/bin:$PATH"
 fi
 
-MODE="${SHIJU_PROCESSOR_MODE:-demo}"
+MODE="${SHIJU_PROCESSOR_MODE:-real}"
 
 cleanup() {
   kill "$BACKEND_PID" 2>/dev/null || true

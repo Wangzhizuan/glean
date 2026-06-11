@@ -121,6 +121,10 @@ def _is_youtube_url(url: str) -> bool:
     return bool(re.search(r"(?:youtube\.com|youtu\.be)", url, re.IGNORECASE))
 
 
+def _is_xiaoyuzhou_url(url: str) -> bool:
+    return bool(re.search(r"xiaoyuzhoufm\.com", url, re.IGNORECASE))
+
+
 def _has_deno() -> bool:
     """Detect if a JS runtime usable by yt-dlp's EJS solver is available."""
     return shutil.which("deno") is not None
@@ -151,12 +155,14 @@ def _run_ytdlp(args: List[str], timeout: int = 120, url: Optional[str] = None) -
     import sys
     target_url = url or (args[-1] if args else "")
     is_youtube = _is_youtube_url(target_url)
+    is_xiaoyuzhou = _is_xiaoyuzhou_url(target_url)
     # YouTube alt player clients (tv_simply/ios/mweb) don't accept browser cookies
     # and would otherwise be skipped, falling back to the broken web client.
-    # Drop cookies for YouTube; keep them for Bilibili/Douyin which need them.
+    # 小宇宙走的是 generic 抽取器，浏览器 cookies 反而可能被 CDN 拒绝；
+    # 所以仅在 Bilibili/Douyin 这类需要登录态的站点下注入 cookies。
     cookie_args = (
         []
-        if is_youtube
+        if is_youtube or is_xiaoyuzhou
         else (["--cookies-from-browser", COOKIES_FROM_BROWSER] if COOKIES_FROM_BROWSER else [])
     )
     extractor_args = _youtube_extractor_args() if is_youtube else []

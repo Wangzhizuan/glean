@@ -13,7 +13,7 @@ export default function HomePage() {
         <section className="container home-hero">
           <div>
             <span className="eyebrow">
-              抖音 · Bilibili · YouTube · 微信公众号 · 小红书 · 飞书 · 网页
+              抖音 · Bilibili · YouTube · 小宇宙 · 微信公众号 · 小红书 · 飞书 · 网页
             </span>
             <h1>把值得反复看的内容，变成随时可用的文字。</h1>
             <p className="lead">
