@@ -15,6 +15,9 @@ fi
 
 MODE="${GLEAN_PROCESSOR_MODE:-real}"
 
+# 禁止 Python 生成 .pyc，避免 __pycache__ 变动触发 uvicorn 自重启与前端 Turbopack 整页热刷新
+export PYTHONDONTWRITEBYTECODE=1
+
 cleanup() {
   kill "$BACKEND_PID" 2>/dev/null || true
 }
@@ -52,7 +55,9 @@ fi
 
 echo "🚀 启动拾句后端 (模式: $MODE, 端口: 8787, Python: $PYTHON)"
 GLEAN_PROCESSOR_MODE="$MODE" $PYTHON -m uvicorn app.main:app \
-  --host 127.0.0.1 --port 8787 --reload --app-dir backend &
+  --host 127.0.0.1 --port 8787 --reload \
+  --reload-dir backend/app \
+  --app-dir backend &
 BACKEND_PID=$!
 
 echo "🚀 启动 Next.js 前端 (端口: 3000)"
