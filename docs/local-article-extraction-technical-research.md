@@ -216,7 +216,7 @@ class ArticleResult:
 def extract_article(url: str, source: str) -> ArticleResult: ...
 ```
 
-来源识别可扩展现有 `SUPPORTED_HOSTS`（见 [main.py](file:///Users/bytedance/Desktop/project/my-open-design-project/backend/app/main.py#L39)）：
+来源识别可扩展现有 `SUPPORTED_HOSTS`（见 [main.py](file:///Users/bytedance/Desktop/project/glean/backend/app/main.py#L39)）：
 
 ```python
 ARTICLE_HOSTS = {
@@ -241,7 +241,7 @@ resolving(0.1) -> fetching(0.4) -> extracting(0.7)
 
 ### 5.4 能力探测扩展
 
-仿照已修复的 `mlx_whisper_status()`（见 [main.py](file:///Users/bytedance/Desktop/project/my-open-design-project/backend/app/main.py#L204)），在 `/api/capabilities` 增加：
+仿照已修复的 `mlx_whisper_status()`（见 [main.py](file:///Users/bytedance/Desktop/project/glean/backend/app/main.py#L204)），在 `/api/capabilities` 增加：
 
 ```python
 "trafilatura": {"available": importlib.util.find_spec("trafilatura") is not None},
