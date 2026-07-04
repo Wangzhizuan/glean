@@ -81,6 +81,22 @@ def make_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:20]}"
 
 
+def _parse_tags(tags_json: Optional[str]) -> List[str]:
+    if not tags_json:
+        return []
+    try:
+        data = json.loads(tags_json)
+        return [str(tag) for tag in data if str(tag).strip()]
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
+def _strip_hashtags(text: str) -> str:
+    """Remove #hashtags from a title for a cleaner Bitable 标题 cell."""
+    cleaned = re.sub(r"#[^\s#@]+", "", text)
+    return re.sub(r"\s+", " ", cleaned).strip() or text
+
+
 def connect() -> sqlite3.Connection:
     connection = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
     connection.row_factory = sqlite3.Row
@@ -167,12 +183,56 @@ def init_database() -> None:
                 expires_at TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS creator_jobs (
+                id TEXT PRIMARY KEY,
+                platform TEXT NOT NULL DEFAULT 'douyin',
+                input_type TEXT NOT NULL,
+                input_value TEXT NOT NULL,
+                creator_url TEXT,
+                creator_name TEXT,
+                creator_sec_uid TEXT,
+                requested_limit INTEGER NOT NULL DEFAULT 50,
+                discovered_count INTEGER NOT NULL DEFAULT 0,
+                completed_count INTEGER NOT NULL DEFAULT 0,
+                failed_count INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL,
+                bitable_url TEXT,
+                error_code TEXT,
+                error_message TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS creator_videos (
+                id TEXT PRIMARY KEY,
+                creator_job_id TEXT NOT NULL REFERENCES creator_jobs(id),
+                aweme_id TEXT NOT NULL,
+                video_url TEXT NOT NULL,
+                title TEXT,
+                duration_ms INTEGER,
+                like_count INTEGER,
+                comment_count INTEGER,
+                collect_count INTEGER,
+                share_count INTEGER,
+                play_count INTEGER,
+                cover_url TEXT,
+                published_at TEXT,
+                tags_json TEXT,
+                task_id TEXT REFERENCES tasks(id),
+                transcribe_status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE (creator_job_id, aweme_id)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_tasks_batch ON tasks(batch_id);
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at);
             CREATE INDEX IF NOT EXISTS idx_transcripts_task ON transcripts(task_id);
             CREATE INDEX IF NOT EXISTS idx_generated_contents_task ON generated_contents(task_id);
             CREATE INDEX IF NOT EXISTS idx_artifacts_task ON artifacts(task_id);
+            CREATE INDEX IF NOT EXISTS idx_creator_videos_job ON creator_videos(creator_job_id);
+            CREATE INDEX IF NOT EXISTS idx_creator_jobs_status ON creator_jobs(status);
             """
         )
         connection.execute(
@@ -187,6 +247,11 @@ def init_database() -> None:
         # were created before article support was added.
         try:
             connection.execute("ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'video'")
+        except sqlite3.OperationalError:
+            pass
+        # Backward-compat: creator_videos.tags_json added after initial release.
+        try:
+            connection.execute("ALTER TABLE creator_videos ADD COLUMN tags_json TEXT")
         except sqlite3.OperationalError:
             pass
 
@@ -212,6 +277,12 @@ class BatchCreate(BaseModel):
     urls: List[str] = Field(min_length=1, max_length=10)
     outputs: OutputOptions = Field(default_factory=OutputOptions)
     options: ProcessingOptions = Field(default_factory=ProcessingOptions)
+
+
+class CreatorJobCreate(BaseModel):
+    input: str = Field(min_length=1)
+    inputType: Literal["url", "name"] = "url"
+    limit: int = Field(default=50, ge=1, le=200)
 
 
 def normalize_url(raw_url: str) -> str:
@@ -429,6 +500,16 @@ class Worker:
 
     def run(self) -> None:
         while not self.stop_event.is_set():
+            # Creator jobs take priority for their discovery/sync phases, but
+            # the per-video transcription still flows through the tasks queue.
+            creator_job = self.claim_next_creator_job()
+            if creator_job:
+                try:
+                    self.process_creator_job(creator_job["id"], creator_job["status"])
+                except Exception as error:  # noqa: BLE001
+                    self.fail_creator_job(creator_job["id"], "CREATOR_FAILED", str(error))
+                continue
+
             task = self.claim_next_task()
             if not task:
                 self.stop_event.wait(0.4)
@@ -437,6 +518,8 @@ class Worker:
                 self.process(task["id"])
             except Exception as error:
                 self.fail_task(task["id"], "PROCESSOR_FAILED", str(error))
+            finally:
+                self.backfill_creator_video(task["id"])
 
     def claim_next_task(self) -> Optional[sqlite3.Row]:
         with connect() as connection:
@@ -971,6 +1054,298 @@ class Worker:
             )
             update_batch_counts(connection, task["batch_id"])
 
+    # ------------------------------------------------------------------
+    # Creator jobs
+    # ------------------------------------------------------------------
+
+    def claim_next_creator_job(self) -> Optional[sqlite3.Row]:
+        """Pick a creator job that needs the worker: discovery or sync."""
+        with connect() as connection:
+            return connection.execute(
+                """
+                SELECT id, status FROM creator_jobs
+                WHERE status IN ('discovering', 'syncing')
+                ORDER BY created_at LIMIT 1
+                """
+            ).fetchone()
+
+    def process_creator_job(self, job_id: str, status: str) -> None:
+        if PROCESSOR_MODE == "demo":
+            # Demo mode never harvests real creators; fail honestly.
+            self.fail_creator_job(
+                job_id,
+                "DEMO_MODE",
+                "演示模式不支持博主批量抓取，请用 npm run dev:real 启动真实模式。",
+            )
+            return
+        if status == "discovering":
+            self._discover_creator(job_id)
+        elif status == "syncing":
+            self._sync_creator(job_id)
+
+    def _discover_creator(self, job_id: str) -> None:
+        """Harvest the creator's video list and enqueue transcription tasks."""
+        from .creator import CreatorError, harvest_creator, resolve_creator_url_by_name
+
+        with connect() as connection:
+            job = connection.execute(
+                "SELECT * FROM creator_jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+            if not job:
+                return
+            input_type = job["input_type"]
+            input_value = job["input_value"]
+            limit = job["requested_limit"]
+            options_json = json.dumps(
+                {"outputs": OutputOptions().model_dump(), "options": ProcessingOptions().model_dump()},
+                ensure_ascii=False,
+            )
+
+        try:
+            creator_url = job["creator_url"] or input_value
+            if input_type == "name" and not job["creator_url"]:
+                creator_url = resolve_creator_url_by_name(input_value)
+
+            def on_progress(count: int) -> None:
+                with connect() as conn:
+                    conn.execute(
+                        "UPDATE creator_jobs SET discovered_count = ?, updated_at = ? WHERE id = ?",
+                        (count, utc_now(), job_id),
+                    )
+
+            harvest = harvest_creator(creator_url, limit=limit, on_progress=on_progress)
+        except CreatorError as e:
+            self.fail_creator_job(job_id, e.code, e.message)
+            return
+
+        # If the user cancelled while we were harvesting, stop before enqueuing
+        # any transcription tasks so we don't spend local resources.
+        with connect() as connection:
+            current = connection.execute(
+                "SELECT status FROM creator_jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+            if current and current["status"] == "cancelled":
+                return
+
+        created_at = utc_now()
+        with connect() as connection:
+            connection.execute(
+                """
+                UPDATE creator_jobs SET creator_url = ?, creator_name = ?,
+                  creator_sec_uid = ?, discovered_count = ?, status = 'processing',
+                  updated_at = ? WHERE id = ?
+                """,
+                (
+                    harvest.creator_url,
+                    harvest.creator_name,
+                    harvest.creator_sec_uid,
+                    len(harvest.videos),
+                    created_at,
+                    job_id,
+                ),
+            )
+            for video in harvest.videos:
+                task_id = make_id("tsk")
+                connection.execute(
+                    """
+                    INSERT INTO tasks(
+                      id, batch_id, source_url, platform, kind, status, options_json,
+                      created_at, updated_at
+                    ) VALUES (?, ?, ?, 'douyin', 'video', 'queued', ?, ?, ?)
+                    """,
+                    (task_id, job_id, video.video_url, options_json, created_at, created_at),
+                )
+                connection.execute(
+                    """
+                    INSERT OR IGNORE INTO creator_videos(
+                      id, creator_job_id, aweme_id, video_url, title, duration_ms,
+                      like_count, comment_count, collect_count, share_count, play_count,
+                      cover_url, published_at, tags_json, task_id, transcribe_status,
+                      created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
+                    """,
+                    (
+                        make_id("cvd"),
+                        job_id,
+                        video.aweme_id,
+                        video.video_url,
+                        video.title,
+                        video.duration_ms,
+                        video.like_count,
+                        video.comment_count,
+                        video.collect_count,
+                        video.share_count,
+                        video.play_count,
+                        video.cover_url,
+                        video.published_at,
+                        json.dumps(video.tags, ensure_ascii=False),
+                        task_id,
+                        created_at,
+                        created_at,
+                    ),
+                )
+
+    def backfill_creator_video(self, task_id: str) -> None:
+        """After a task terminates, copy its result into the creator_videos row."""
+        with connect() as connection:
+            video = connection.execute(
+                "SELECT id, creator_job_id FROM creator_videos WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            if not video:
+                return
+            task = connection.execute(
+                "SELECT status, title, duration_ms FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            if not task:
+                return
+            status = task["status"]
+            if status not in ("completed", "failed", "cancelled"):
+                return
+            new_status = "done" if status == "completed" else "failed"
+            connection.execute(
+                """
+                UPDATE creator_videos SET transcribe_status = ?, title = COALESCE(?, title),
+                  duration_ms = COALESCE(?, duration_ms), updated_at = ?
+                WHERE id = ?
+                """,
+                (new_status, task["title"], task["duration_ms"], utc_now(), video["id"]),
+            )
+            job_id = video["creator_job_id"]
+            self._recount_creator_job(connection, job_id)
+
+    def _recount_creator_job(self, connection: sqlite3.Connection, job_id: str) -> None:
+        counts = connection.execute(
+            """
+            SELECT
+              COUNT(*) AS total,
+              SUM(CASE WHEN transcribe_status = 'done' THEN 1 ELSE 0 END) AS done,
+              SUM(CASE WHEN transcribe_status = 'failed' THEN 1 ELSE 0 END) AS failed,
+              SUM(CASE WHEN transcribe_status IN ('pending','queued') THEN 1 ELSE 0 END) AS pending
+            FROM creator_videos WHERE creator_job_id = ?
+            """,
+            (job_id,),
+        ).fetchone()
+        job = connection.execute(
+            "SELECT status FROM creator_jobs WHERE id = ?", (job_id,)
+        ).fetchone()
+        if not job:
+            return
+        # Never resurrect a job the user has cancelled (or one that already failed).
+        if job["status"] in ("cancelled", "failed"):
+            return
+        next_status = job["status"]
+        # When all videos reached a terminal state, mark the transcription phase
+        # as done. The user then triggers Feishu sync explicitly.
+        if job["status"] == "processing" and counts["pending"] == 0 and counts["total"] > 0:
+            next_status = "transcribed"
+        connection.execute(
+            """
+            UPDATE creator_jobs SET completed_count = ?, failed_count = ?,
+              status = ?, updated_at = ? WHERE id = ?
+            """,
+            (counts["done"] or 0, counts["failed"] or 0, next_status, utc_now(), job_id),
+        )
+
+    def _sync_creator(self, job_id: str) -> None:
+        """Write all completed creator videos into a new Feishu Bitable."""
+        from .feishu_bitable import FeishuError, sync_creator_videos
+
+        with connect() as connection:
+            job = connection.execute(
+                "SELECT * FROM creator_jobs WHERE id = ?", (job_id,)
+            ).fetchone()
+            if not job:
+                return
+            videos = connection.execute(
+                "SELECT * FROM creator_videos WHERE creator_job_id = ? ORDER BY created_at",
+                (job_id,),
+            ).fetchall()
+
+        payload: List[Dict[str, Any]] = []
+        for video in videos:
+            transcript_text, summary_text, quotes_text = self._creator_video_texts(
+                video["task_id"]
+            )
+            tags = _parse_tags(video["tags_json"] if "tags_json" in video.keys() else None)
+            clean_title = _strip_hashtags(video["title"]) if video["title"] else video["title"]
+            payload.append(
+                {
+                    "title": clean_title,
+                    "tags": " ".join(f"#{t}" for t in tags) if tags else None,
+                    "video_url": video["video_url"],
+                    "cover_url": video["cover_url"],
+                    "like_count": video["like_count"],
+                    "comment_count": video["comment_count"],
+                    "collect_count": video["collect_count"],
+                    "share_count": video["share_count"],
+                    "duration_ms": video["duration_ms"],
+                    "published_at": video["published_at"],
+                    "transcript": transcript_text,
+                    "summary": summary_text,
+                    "quotes": quotes_text,
+                }
+            )
+
+        base_name = f"抖音博主-{job['creator_name'] or job['creator_sec_uid'] or '未命名'}-文案库"
+        try:
+            target = sync_creator_videos(base_name, payload)
+        except FeishuError as e:
+            self.fail_creator_job(job_id, e.code, e.message)
+            return
+
+        with connect() as connection:
+            connection.execute(
+                """
+                UPDATE creator_jobs SET status = 'completed', bitable_url = ?,
+                  error_code = NULL, error_message = NULL, updated_at = ? WHERE id = ?
+                """,
+                (target.url, utc_now(), job_id),
+            )
+
+    def _creator_video_texts(self, task_id: Optional[str]) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        """Pull transcript / summary / quotes text for one video's task."""
+        if not task_id:
+            return None, None, None
+        with connect() as connection:
+            tr = connection.execute(
+                "SELECT readable_text FROM transcripts WHERE task_id = ?", (task_id,)
+            ).fetchone()
+            summary_row = connection.execute(
+                "SELECT content_json FROM generated_contents WHERE task_id = ? AND type = 'summary' ORDER BY created_at DESC LIMIT 1",
+                (task_id,),
+            ).fetchone()
+            quotes_row = connection.execute(
+                "SELECT content_json FROM generated_contents WHERE task_id = ? AND type = 'quotes' ORDER BY created_at DESC LIMIT 1",
+                (task_id,),
+            ).fetchone()
+        transcript_text = tr["readable_text"] if tr else None
+        summary_text = None
+        if summary_row:
+            try:
+                data = json.loads(summary_row["content_json"])
+                summary_text = data.get("detailedSummary") or data.get("overview") or None
+            except (json.JSONDecodeError, AttributeError):
+                summary_text = None
+        quotes_text = None
+        if quotes_row:
+            try:
+                data = json.loads(quotes_row["content_json"])
+                quotes_text = "\n".join(f"「{q.get('text', '')}」" for q in data if q.get("text"))
+            except (json.JSONDecodeError, AttributeError, TypeError):
+                quotes_text = None
+        return transcript_text, summary_text, quotes_text
+
+    def fail_creator_job(self, job_id: str, code: str, message: str) -> None:
+        with connect() as connection:
+            connection.execute(
+                """
+                UPDATE creator_jobs SET status = 'failed', error_code = ?,
+                  error_message = ?, updated_at = ? WHERE id = ?
+                """,
+                (code, message, utc_now(), job_id),
+            )
+
 
 worker = Worker()
 
@@ -1342,6 +1717,268 @@ async def events(batchId: str):
                 yield "event: batch.finished\ndata: {}\n\n"
                 break
             await asyncio.sleep(0.7)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Creator jobs (Douyin creator batch -> Feishu Bitable)
+# ---------------------------------------------------------------------------
+
+CREATOR_TERMINAL = {"completed", "failed", "cancelled"}
+
+
+def creator_job_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    return {
+        "id": row["id"],
+        "platform": row["platform"],
+        "inputType": row["input_type"],
+        "inputValue": row["input_value"],
+        "creatorUrl": row["creator_url"],
+        "creatorName": row["creator_name"],
+        "creatorSecUid": row["creator_sec_uid"],
+        "requestedLimit": row["requested_limit"],
+        "discoveredCount": row["discovered_count"],
+        "completedCount": row["completed_count"],
+        "failedCount": row["failed_count"],
+        "status": row["status"],
+        "bitableUrl": row["bitable_url"],
+        "createdAt": row["created_at"],
+        "updatedAt": row["updated_at"],
+        "error": (
+            {"code": row["error_code"], "message": row["error_message"]}
+            if row["error_code"]
+            else None
+        ),
+    }
+
+
+def creator_video_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
+    # Reflect the live task status while a video is still being transcribed so
+    # the UI can show "识别中" instead of a stale "排队中".
+    stored = row["transcribe_status"]
+    task_status = row["task_status"] if "task_status" in row.keys() else None
+    display_status = stored
+    if stored in ("pending", "queued") and task_status:
+        if task_status in ACTIVE_STATUSES and task_status != "queued":
+            display_status = "processing"
+    return {
+        "id": row["id"],
+        "awemeId": row["aweme_id"],
+        "videoUrl": row["video_url"],
+        "title": row["title"],
+        "durationMs": row["duration_ms"],
+        "likeCount": row["like_count"],
+        "commentCount": row["comment_count"],
+        "collectCount": row["collect_count"],
+        "shareCount": row["share_count"],
+        "playCount": row["play_count"],
+        "coverUrl": row["cover_url"],
+        "publishedAt": row["published_at"],
+        "tags": _parse_tags(row["tags_json"] if "tags_json" in row.keys() else None),
+        "taskId": row["task_id"],
+        "transcribeStatus": display_status,
+    }
+
+
+def get_creator_job_payload(job_id: str) -> Dict[str, Any]:
+    with connect() as connection:
+        job = connection.execute(
+            "SELECT * FROM creator_jobs WHERE id = ?", (job_id,)
+        ).fetchone()
+        if not job:
+            raise HTTPException(404, detail={"code": "NOT_FOUND", "message": "博主任务不存在"})
+        videos = connection.execute(
+            """
+            SELECT cv.*, t.status AS task_status
+            FROM creator_videos cv
+            LEFT JOIN tasks t ON t.id = cv.task_id
+            WHERE cv.creator_job_id = ? ORDER BY cv.created_at
+            """,
+            (job_id,),
+        ).fetchall()
+    payload = creator_job_to_dict(job)
+    payload["videos"] = [creator_video_to_dict(video) for video in videos]
+    return payload
+
+
+@app.get("/api/creator/capabilities")
+def creator_capabilities_endpoint() -> Dict[str, Any]:
+    from .creator import creator_capabilities
+    from .feishu_bitable import feishu_readiness
+
+    return {
+        "processorMode": PROCESSOR_MODE,
+        "harvest": creator_capabilities(),
+        "feishu": feishu_readiness(),
+    }
+
+
+@app.post("/api/creator-jobs", status_code=201)
+def create_creator_job(payload: CreatorJobCreate) -> Dict[str, Any]:
+    from .creator import is_douyin_user_url
+
+    value = payload.input.strip()
+    creator_url: Optional[str] = None
+    if payload.inputType == "url":
+        if not is_douyin_user_url(value):
+            raise HTTPException(
+                400,
+                detail={
+                    "code": "INVALID_CREATOR_URL",
+                    "message": "请粘贴抖音博主主页链接（形如 douyin.com/user/XXX）。",
+                },
+            )
+        creator_url = value
+
+    job_id = make_id("crt")
+    created_at = utc_now()
+    with connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO creator_jobs(
+              id, platform, input_type, input_value, creator_url, requested_limit,
+              status, created_at, updated_at
+            ) VALUES (?, 'douyin', ?, ?, ?, ?, 'discovering', ?, ?)
+            """,
+            (job_id, payload.inputType, value, creator_url, payload.limit, created_at, created_at),
+        )
+    return get_creator_job_payload(job_id)
+
+
+@app.get("/api/creator-jobs")
+def list_creator_jobs() -> Dict[str, Any]:
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT id FROM creator_jobs ORDER BY created_at DESC LIMIT 100"
+        ).fetchall()
+    items = [get_creator_job_payload(row["id"]) for row in rows]
+    return {"items": items, "total": len(items)}
+
+
+@app.get("/api/creator-jobs/{job_id}")
+def get_creator_job(job_id: str) -> Dict[str, Any]:
+    return get_creator_job_payload(job_id)
+
+
+@app.post("/api/creator-jobs/{job_id}/sync-feishu")
+def sync_creator_job(job_id: str) -> Dict[str, Any]:
+    with connect() as connection:
+        job = connection.execute(
+            "SELECT status FROM creator_jobs WHERE id = ?", (job_id,)
+        ).fetchone()
+        if not job:
+            raise HTTPException(404, detail={"code": "NOT_FOUND", "message": "博主任务不存在"})
+        if job["status"] in ("discovering", "processing"):
+            raise HTTPException(
+                409,
+                detail={"code": "NOT_READY", "message": "视频还在抓取或转写中，请等待完成后再同步。"},
+            )
+        connection.execute(
+            "UPDATE creator_jobs SET status = 'syncing', error_code = NULL, error_message = NULL, updated_at = ? WHERE id = ?",
+            (utc_now(), job_id),
+        )
+    return get_creator_job_payload(job_id)
+
+
+@app.post("/api/creator-jobs/{job_id}/retry")
+def retry_creator_job(job_id: str) -> Dict[str, Any]:
+    """Retry a failed job: re-discover if no videos yet, else re-run failed videos."""
+    with connect() as connection:
+        job = connection.execute(
+            "SELECT * FROM creator_jobs WHERE id = ?", (job_id,)
+        ).fetchone()
+        if not job:
+            raise HTTPException(404, detail={"code": "NOT_FOUND", "message": "博主任务不存在"})
+        video_count = connection.execute(
+            "SELECT COUNT(*) AS n FROM creator_videos WHERE creator_job_id = ?", (job_id,)
+        ).fetchone()["n"]
+        if video_count == 0:
+            connection.execute(
+                "UPDATE creator_jobs SET status = 'discovering', error_code = NULL, error_message = NULL, updated_at = ? WHERE id = ?",
+                (utc_now(), job_id),
+            )
+        else:
+            # Re-queue failed videos' tasks.
+            failed_videos = connection.execute(
+                "SELECT task_id FROM creator_videos WHERE creator_job_id = ? AND transcribe_status = 'failed'",
+                (job_id,),
+            ).fetchall()
+            for video in failed_videos:
+                if video["task_id"]:
+                    connection.execute(
+                        "UPDATE tasks SET status = 'queued', error_code = NULL, error_message = NULL, updated_at = ? WHERE id = ?",
+                        (utc_now(), video["task_id"]),
+                    )
+                    connection.execute(
+                        "UPDATE creator_videos SET transcribe_status = 'queued', updated_at = ? WHERE task_id = ?",
+                        (utc_now(), video["task_id"]),
+                    )
+            connection.execute(
+                "UPDATE creator_jobs SET status = 'processing', error_code = NULL, error_message = NULL, updated_at = ? WHERE id = ?",
+                (utc_now(), job_id),
+            )
+    return get_creator_job_payload(job_id)
+
+
+@app.post("/api/creator-jobs/{job_id}/cancel")
+def cancel_creator_job(job_id: str) -> Dict[str, Any]:
+    """Stop a running creator job: cancel all non-terminal child tasks and mark
+    the job cancelled so the worker stops spending local resources on it."""
+    with connect() as connection:
+        job = connection.execute(
+            "SELECT status FROM creator_jobs WHERE id = ?", (job_id,)
+        ).fetchone()
+        if not job:
+            raise HTTPException(404, detail={"code": "NOT_FOUND", "message": "博主任务不存在"})
+        if job["status"] in ("completed", "cancelled"):
+            return get_creator_job_payload(job_id)
+        # Cancel every child task that hasn't reached a terminal state. The
+        # pipeline's on_stage callback checks for 'cancelled' and aborts.
+        connection.execute(
+            f"""
+            UPDATE tasks SET status = 'cancelled', updated_at = ?
+            WHERE batch_id = ? AND status NOT IN ({','.join('?' for _ in TERMINAL_STATUSES)})
+            """,
+            (utc_now(), job_id, *TERMINAL_STATUSES),
+        )
+        # Mark pending/queued videos as cancelled for a truthful UI.
+        connection.execute(
+            """
+            UPDATE creator_videos SET transcribe_status = 'cancelled', updated_at = ?
+            WHERE creator_job_id = ? AND transcribe_status IN ('pending','queued')
+            """,
+            (utc_now(), job_id),
+        )
+        connection.execute(
+            "UPDATE creator_jobs SET status = 'cancelled', updated_at = ? WHERE id = ?",
+            (utc_now(), job_id),
+        )
+    return get_creator_job_payload(job_id)
+
+
+@app.get("/api/creator-events")
+async def creator_events(jobId: str):
+    async def stream():
+        previous_hash = ""
+        while True:
+            try:
+                payload = get_creator_job_payload(jobId)
+            except HTTPException:
+                break
+            serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+            current_hash = hashlib.sha256(serialized.encode()).hexdigest()
+            if current_hash != previous_hash:
+                previous_hash = current_hash
+                yield f"event: creator.updated\ndata: {serialized}\n\n"
+            if payload["status"] in CREATOR_TERMINAL:
+                yield "event: creator.finished\ndata: {}\n\n"
+                break
+            await asyncio.sleep(0.8)
 
     return StreamingResponse(
         stream(),

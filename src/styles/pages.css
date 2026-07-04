@@ -809,3 +809,314 @@
     width: 100%;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Creator batch page (/creator)
+ * ------------------------------------------------------------------------- */
+
+.system-notice--success {
+  color: var(--color-text-primary);
+  background: color-mix(in oklab, var(--color-success), transparent 88%);
+  border: 1px solid color-mix(in oklab, var(--color-success), transparent 65%);
+}
+
+/* The base .system-notice pulls itself up with a negative top margin (a
+ * detail-page layout hack). Inside the creator panel it must flow with the
+ * normal stack rhythm so it doesn't overlap the header/meta line above it. */
+.creator-panel .system-notice {
+  margin-top: var(--space-4);
+  margin-bottom: 0;
+}
+
+.system-notice--success a {
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.creator-form {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.creator-form .input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.creator-form .select {
+  flex: 0 0 auto;
+  min-width: 128px;
+  width: auto;
+}
+
+.creator-form__label {
+  flex: 0 0 auto;
+  color: var(--color-meta);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.creator-panel {
+  margin-top: var(--space-6);
+}
+
+.creator-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+}
+
+.creator-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  table-layout: fixed;
+  min-width: 760px;
+}
+
+.creator-table th,
+.creator-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.creator-table th {
+  color: var(--color-meta);
+  font-weight: 600;
+  background: var(--color-surface-warm);
+  position: sticky;
+  top: 0;
+}
+
+.creator-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Column sizing: cover / title stretch, metrics compact. */
+.creator-table__col-cover {
+  width: 60px;
+}
+
+.creator-table__col-title {
+  width: auto;
+}
+
+.creator-table__col-num {
+  width: 68px;
+}
+
+.creator-table__col-dur {
+  width: 68px;
+}
+
+.creator-table__col-status {
+  width: 84px;
+}
+
+.creator-table__cover img {
+  width: 44px;
+  height: 58px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  display: block;
+}
+
+.creator-table td.creator-table__title {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.creator-table__title a {
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+.creator-table__title a:hover {
+  text-decoration: underline;
+}
+
+.creator-table__tags {
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.creator-table__tag {
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 1px 7px;
+  border-radius: 999px;
+  color: var(--color-text-secondary);
+  background: color-mix(in oklab, var(--color-accent, #c2410c), transparent 90%);
+  white-space: nowrap;
+}
+
+@media (max-width: 820px) {
+  .creator-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .creator-table__title {
+    max-width: 180px;
+  }
+}
+
+.creator-highlight {
+  margin-top: var(--space-14);
+  padding: var(--space-9);
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: var(--space-9);
+  align-items: center;
+  background: var(--color-surface-warm);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg, 16px);
+}
+
+.creator-highlight__body h2 {
+  margin: var(--space-3) 0;
+}
+
+.creator-highlight__body p {
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-5);
+}
+
+.creator-highlight__points {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.creator-highlight__points li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.creator-highlight__points b {
+  font-size: var(--text-sm);
+}
+
+.creator-highlight__points span {
+  color: var(--color-meta);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 900px) {
+  .creator-highlight {
+    grid-template-columns: 1fr;
+    gap: var(--space-6);
+  }
+}
+
+/* Creator batch jobs on the history page */
+.creator-jobs-group {
+  margin-bottom: var(--space-8);
+}
+
+.creator-jobs-group__head {
+  margin-bottom: var(--space-4);
+}
+
+.creator-job-card {
+  margin-bottom: var(--space-3);
+}
+
+.creator-job-card__summary {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.creator-job-card__summary > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.creator-job-card__caret {
+  color: var(--color-meta);
+  margin-top: 2px;
+}
+
+.creator-job-card__progress {
+  margin-top: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.creator-job-card__progress .progress {
+  flex: 1;
+}
+
+.creator-job-card__bitable {
+  display: inline-block;
+  margin-top: var(--space-3);
+  color: var(--color-success);
+  font-weight: 600;
+  font-size: var(--text-sm);
+}
+
+.creator-job-card__videos {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3) 0 0;
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.creator-job-card__videos li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--text-sm);
+}
+
+.creator-job-card__videos li > span {
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.creator-job-card__videos a {
+  color: var(--color-text-primary);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.creator-job-card__videos a:hover {
+  text-decoration: underline;
+}
+
+.creator-job-card__empty {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}

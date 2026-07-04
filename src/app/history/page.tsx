@@ -8,14 +8,38 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/form-controls";
-import { exportUrl, deleteTasks, getTasks } from "@/lib/api";
-import type { Task } from "@/lib/api-types";
+import { Progress } from "@/components/ui/progress";
+import {
+  cancelCreatorJob,
+  exportUrl,
+  deleteTasks,
+  getTasks,
+  listCreatorJobs,
+} from "@/lib/api";
+import type { CreatorJob, CreatorJobStatus, Task } from "@/lib/api-types";
 import {
   formatDateTime,
   formatDuration,
   platformLabels,
   statusLabels,
 } from "@/lib/format";
+
+const CREATOR_JOB_STATUS_LABELS: Record<CreatorJobStatus, string> = {
+  discovering: "正在抓取列表",
+  processing: "正在逐条识别",
+  transcribed: "识别完成，待同步",
+  syncing: "正在同步飞书",
+  completed: "已完成",
+  cancelled: "已终止",
+  failed: "处理失败",
+};
+
+const CREATOR_ACTIVE = new Set<CreatorJobStatus>([
+  "discovering",
+  "processing",
+  "syncing",
+  "transcribed",
+]);
 
 function filterByTime(tasks: Task[], range: string): Task[] {
   if (range === "all") return tasks;
@@ -29,17 +53,22 @@ export default function HistoryPage() {
   const [platform, setPlatform] = useState("全部平台");
   const [timeRange, setTimeRange] = useState("all");
   const [records, setRecords] = useState<Task[]>([]);
+  const [creatorJobs, setCreatorJobs] = useState<CreatorJob[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const { message, showToast } = useToast();
 
   const loadRecords = useCallback(async () => {
     try {
-      const result = await getTasks({
-        platform: platform === "全部平台" ? undefined : platform,
-        query: keyword || undefined,
-      });
-      setRecords(result.items);
+      const [tasksResult, jobsResult] = await Promise.all([
+        getTasks({
+          platform: platform === "全部平台" ? undefined : platform,
+          query: keyword || undefined,
+        }),
+        listCreatorJobs().catch(() => ({ items: [] as CreatorJob[] })),
+      ]);
+      setRecords(tasksResult.items);
+      setCreatorJobs(jobsResult.items);
     } catch {
       showToast("无法读取本机历史记录，请启动本地服务");
     } finally {
@@ -52,7 +81,35 @@ export default function HistoryPage() {
     return () => clearTimeout(timer);
   }, [loadRecords]);
 
-  const visibleRecords = filterByTime(records, timeRange);
+  // Poll while any creator job is still running so progress stays fresh.
+  useEffect(() => {
+    const hasActive = creatorJobs.some((job) => CREATOR_ACTIVE.has(job.status));
+    if (!hasActive) return;
+    const timer = setInterval(() => void loadRecords(), 2500);
+    return () => clearInterval(timer);
+  }, [creatorJobs, loadRecords]);
+
+  async function cancelJob(jobId: string) {
+    if (!window.confirm("确定终止这个博主任务吗？正在进行的识别会被停止。")) {
+      return;
+    }
+    try {
+      await cancelCreatorJob(jobId);
+      showToast("已终止任务");
+      await loadRecords();
+    } catch {
+      showToast("终止任务失败");
+    }
+  }
+
+  // Child tasks of creator jobs use the job id as their batchId; hide them from
+  // the flat list so the big grouped task represents them instead.
+  const creatorJobIds = new Set(creatorJobs.map((job) => job.id));
+  const flatRecords = records.filter(
+    (record) => !creatorJobIds.has(record.batchId),
+  );
+
+  const visibleRecords = filterByTime(flatRecords, timeRange);
   const allVisibleSelected =
     visibleRecords.length > 0 &&
     visibleRecords.every((record) => selected.includes(record.id));
@@ -120,6 +177,23 @@ export default function HistoryPage() {
           eyebrow="文案资料库"
           title="看过的内容，已经整理好了。"
         />
+        {creatorJobs.length > 0 && (
+          <div className="creator-jobs-group">
+            <div className="surface-section__head creator-jobs-group__head">
+              <h2>博主批量任务</h2>
+              <p>每个博主是一个大任务，点击可展开查看逐条视频，进行中可随时终止。</p>
+            </div>
+            <div className="stack">
+              {creatorJobs.map((job) => (
+                <CreatorJobCard
+                  key={job.id}
+                  job={job}
+                  onCancel={() => cancelJob(job.id)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
         <Card as="article" panel>
           <div className="history-toolbar">
             <div className="history-filters">
@@ -269,5 +343,120 @@ export default function HistoryPage() {
       </section>
       <Toast message={message} />
     </AppShell>
+  );
+}
+
+function CreatorJobCard({
+  job,
+  onCancel,
+}: {
+  job: CreatorJob;
+  onCancel: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const total = job.discoveredCount || job.videos?.length || 0;
+  const done = job.completedCount;
+  const progress = total > 0 ? Math.round((done / total) * 100) : 0;
+  const active = CREATOR_ACTIVE.has(job.status);
+  const badgeTone: "success" | "warning" | "working" | "neutral" =
+    job.status === "completed"
+      ? "success"
+      : job.status === "failed"
+        ? "warning"
+        : job.status === "cancelled"
+          ? "neutral"
+          : "working";
+  const videos = job.videos ?? [];
+
+  return (
+    <Card as="article" className="creator-job-card" panel>
+      <div className="row row--between row--mobile-stack">
+        <button
+          className="creator-job-card__summary"
+          onClick={() => setExpanded((value) => !value)}
+          type="button"
+        >
+          <span className="creator-job-card__caret">{expanded ? "▾" : "▸"}</span>
+          <span>
+            <b>{job.creatorName || "抖音博主"}</b>
+            <span className="meta">
+              {CREATOR_JOB_STATUS_LABELS[job.status]} · 已发现 {total} 条 · 已识别{" "}
+              {done} 条
+              {job.failedCount > 0 ? ` · 失败 ${job.failedCount} 条` : ""}
+            </span>
+          </span>
+        </button>
+        <div className="row task__status">
+          <Badge tone={badgeTone}>{CREATOR_JOB_STATUS_LABELS[job.status]}</Badge>
+          <Button
+            href={`/creator?jobId=${encodeURIComponent(job.id)}`}
+            variant="quiet"
+          >
+            打开
+          </Button>
+          {active && (
+            <Button onClick={onCancel} variant="secondary">
+              终止
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {active && total > 0 && (
+        <div className="creator-job-card__progress">
+          <Progress value={progress} />
+          <span className="meta mono">{progress}%</span>
+        </div>
+      )}
+
+      {job.status === "completed" && job.bitableUrl && (
+        <a
+          className="creator-job-card__bitable"
+          href={job.bitableUrl}
+          rel="noreferrer"
+          target="_blank"
+        >
+          打开飞书多维表格 ↗
+        </a>
+      )}
+
+      {job.error && <div className="task-error">{job.error.message}</div>}
+
+      {expanded && videos.length > 0 && (
+        <ul className="creator-job-card__videos">
+          {videos.map((video) => (
+            <li key={video.id}>
+              <a href={video.videoUrl} rel="noreferrer" target="_blank">
+                {video.title || "（无标题）"}
+              </a>
+              <span
+                className={
+                  video.transcribeStatus === "done"
+                    ? "capability-ready"
+                    : video.transcribeStatus === "failed"
+                      ? "capability-missing"
+                      : "meta"
+                }
+              >
+                {video.transcribeStatus === "done"
+                  ? "已完成"
+                  : video.transcribeStatus === "failed"
+                    ? "失败"
+                    : video.transcribeStatus === "processing"
+                      ? "识别中"
+                      : video.transcribeStatus === "cancelled"
+                        ? "已终止"
+                        : "排队中"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {expanded && videos.length === 0 && (
+        <div className="meta creator-job-card__empty">
+          还没有抓到视频，请稍候或到「打开」页查看详情。
+        </div>
+      )}
+    </Card>
   );
 }

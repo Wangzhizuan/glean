@@ -151,3 +151,73 @@ export interface TaskResult {
     notice?: string;
   };
 }
+
+export type CreatorJobStatus =
+  | "discovering"
+  | "processing"
+  | "transcribed"
+  | "syncing"
+  | "completed"
+  | "cancelled"
+  | "failed";
+
+export type CreatorVideoStatus =
+  | "pending"
+  | "queued"
+  | "processing"
+  | "done"
+  | "failed"
+  | "cancelled";
+
+export interface CreatorVideo {
+  id: string;
+  awemeId: string;
+  videoUrl: string;
+  title: string | null;
+  durationMs: number | null;
+  likeCount: number | null;
+  commentCount: number | null;
+  collectCount: number | null;
+  shareCount: number | null;
+  playCount: number | null;
+  coverUrl: string | null;
+  publishedAt: string | null;
+  tags?: string[];
+  taskId: string | null;
+  transcribeStatus: CreatorVideoStatus;
+}
+
+export interface CreatorJob {
+  id: string;
+  platform: string;
+  inputType: "url" | "name";
+  inputValue: string;
+  creatorUrl: string | null;
+  creatorName: string | null;
+  creatorSecUid: string | null;
+  requestedLimit: number;
+  discoveredCount: number;
+  completedCount: number;
+  failedCount: number;
+  status: CreatorJobStatus;
+  bitableUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+  error: { code: string; message: string } | null;
+  videos?: CreatorVideo[];
+}
+
+export interface CreatorCapabilities {
+  processorMode: "demo" | "real";
+  harvest: {
+    ready: boolean;
+    playwright: { available: boolean };
+    browserCookies: { available: boolean; count: number; error: string | null };
+    message: string | null;
+  };
+  feishu: {
+    ready: boolean;
+    larkCli: { available: boolean };
+    message: string | null;
+  };
+}

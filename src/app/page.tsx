@@ -67,6 +67,32 @@ export default function HomePage() {
           </div>
           <SurfaceGrid />
         </section>
+        <section className="container creator-highlight">
+          <div className="creator-highlight__body">
+            <span className="eyebrow">博主批量提取 · 新</span>
+            <h2>给一个抖音博主主页，收获一整张文案表。</h2>
+            <p>
+              粘贴博主主页链接（或输入名字），本机自动抓取其视频列表与点赞、评论、收藏、转发等指标，逐条识别文案，再一键汇总写入飞书多维表格，连视频封面链接也一并带上。
+            </p>
+            <div className="hero-actions">
+              <Button href="/creator">试试博主批量提取</Button>
+            </div>
+          </div>
+          <ul className="creator-highlight__points">
+            <li>
+              <b>抓列表 + 指标</b>
+              <span>Playwright + 本机登录态，点赞收藏一网打尽</span>
+            </li>
+            <li>
+              <b>逐条转文案</b>
+              <span>复用本机 yt-dlp + mlx-whisper + Ollama 全流程</span>
+            </li>
+            <li>
+              <b>一键写飞书</b>
+              <span>自动新建多维表格，含标题、指标、封面与文案</span>
+            </li>
+          </ul>
+        </section>
       </main>
     </>
   );

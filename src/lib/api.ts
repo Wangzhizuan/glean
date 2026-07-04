@@ -2,6 +2,8 @@ import type {
   Batch,
   BatchCreateResponse,
   Capabilities,
+  CreatorCapabilities,
+  CreatorJob,
   Task,
   TaskResult,
 } from "./api-types";
@@ -115,4 +117,49 @@ export function deleteTasks(taskIds: string[]) {
     method: "POST",
     body: JSON.stringify({ task_ids: taskIds }),
   });
+}
+
+export function getCreatorCapabilities() {
+  return request<CreatorCapabilities>("/creator/capabilities");
+}
+
+export function createCreatorJob(input: {
+  input: string;
+  inputType: "url" | "name";
+  limit: number;
+}) {
+  return request<CreatorJob>("/creator-jobs", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function listCreatorJobs() {
+  return request<{ items: CreatorJob[]; total: number }>("/creator-jobs");
+}
+
+export function getCreatorJob(jobId: string) {
+  return request<CreatorJob>(`/creator-jobs/${jobId}`);
+}
+
+export function syncCreatorToFeishu(jobId: string) {
+  return request<CreatorJob>(`/creator-jobs/${jobId}/sync-feishu`, {
+    method: "POST",
+  });
+}
+
+export function retryCreatorJob(jobId: string) {
+  return request<CreatorJob>(`/creator-jobs/${jobId}/retry`, {
+    method: "POST",
+  });
+}
+
+export function cancelCreatorJob(jobId: string) {
+  return request<CreatorJob>(`/creator-jobs/${jobId}/cancel`, {
+    method: "POST",
+  });
+}
+
+export function creatorEventsUrl(jobId: string) {
+  return `${API_BASE}/creator-events?jobId=${encodeURIComponent(jobId)}`;
 }
