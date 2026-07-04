@@ -695,8 +695,8 @@ expires_at
 建议将运行数据放在用户 Library，而不是代码仓库：
 
 ```text
-~/Library/Application Support/Shiju/
-├── shiju.db
+~/Library/Application Support/Glean/
+├── glean.db
 ├── models/
 ├── tasks/
 │   └── {task-id}/
@@ -897,7 +897,7 @@ Ollama 总结并发：1
 - 用户词典和专有名词纠错；
 - 本地模型管理页面；
 - 菜单栏常驻服务或打包为 macOS App；
-- Agent/CLI 接口，例如 `shiju add <url>`。
+- Agent/CLI 接口，例如 `glean add <url>`。
 
 ## 16. 技术风险与应对
 

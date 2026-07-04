@@ -13,7 +13,7 @@ else
   export PATH="$HOME/Library/Python/3.9/bin:$PATH"
 fi
 
-MODE="${SHIJU_PROCESSOR_MODE:-real}"
+MODE="${GLEAN_PROCESSOR_MODE:-real}"
 
 cleanup() {
   kill "$BACKEND_PID" 2>/dev/null || true
@@ -51,7 +51,7 @@ if [ "$MODE" = "real" ]; then
 fi
 
 echo "🚀 启动拾句后端 (模式: $MODE, 端口: 8787, Python: $PYTHON)"
-SHIJU_PROCESSOR_MODE="$MODE" $PYTHON -m uvicorn app.main:app \
+GLEAN_PROCESSOR_MODE="$MODE" $PYTHON -m uvicorn app.main:app \
   --host 127.0.0.1 --port 8787 --reload --app-dir backend &
 BACKEND_PID=$!
 

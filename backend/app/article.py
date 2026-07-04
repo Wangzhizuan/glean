@@ -1,4 +1,4 @@
-"""Article extraction adapters for Shiju.
+"""Article extraction adapters for Glean.
 
 Supports four sources:
 - web: any HTTP(S) page → trafilatura (with Playwright fallback)
@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-logger = logging.getLogger("shiju.article")
+logger = logging.getLogger("glean.article")
 
 DEFAULT_HEADERS = {
     "User-Agent": (

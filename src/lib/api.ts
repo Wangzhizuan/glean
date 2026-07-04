@@ -9,7 +9,7 @@ import type {
 } from "./api-types";
 
 const API_BASE =
-  process.env.NEXT_PUBLIC_SHIJU_API_URL || "http://127.0.0.1:8787/api";
+  process.env.NEXT_PUBLIC_GLEAN_API_URL || "http://127.0.0.1:8787/api";
 
 interface ApiErrorPayload {
   detail?: string | { code?: string; message?: string };

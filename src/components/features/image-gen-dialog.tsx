@@ -91,7 +91,7 @@ export function ImageGenDialog({
   const manualMode = getProviderMode(prompt);
 
   function openSidePanel(url: string): Window | null {
-    return window.open(url, "shiju_image_panel", sidePanelFeatures());
+    return window.open(url, "glean_image_panel", sidePanelFeatures());
   }
 
   // 每次真正发起生图时记录当前风格/比例,供下次以快捷标签展示。

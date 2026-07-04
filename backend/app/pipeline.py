@@ -1,4 +1,4 @@
-"""Real processing pipeline for Shiju.
+"""Real processing pipeline for Glean.
 
 Implements: platform adapters (yt-dlp), FFmpeg audio normalization,
 mlx-whisper ASR, and Ollama summarization/quote extraction.
@@ -17,20 +17,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("shiju.pipeline")
+logger = logging.getLogger("glean.pipeline")
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-DATA_DIR = Path(os.getenv("SHIJU_DATA_DIR", Path(__file__).resolve().parents[2] / ".data")).expanduser()
+DATA_DIR = Path(os.getenv("GLEAN_DATA_DIR", Path(__file__).resolve().parents[2] / ".data")).expanduser()
 TASKS_DIR = DATA_DIR / "tasks"
-OLLAMA_HOST = os.getenv("SHIJU_OLLAMA_HOST", "http://127.0.0.1:11434")
-OLLAMA_MODEL = os.getenv("SHIJU_OLLAMA_MODEL", "qwen2.5:7b")
-WHISPER_MODEL = os.getenv("SHIJU_WHISPER_MODEL", "mlx-community/whisper-large-v3-turbo")
+OLLAMA_HOST = os.getenv("GLEAN_OLLAMA_HOST", "http://127.0.0.1:11434")
+OLLAMA_MODEL = os.getenv("GLEAN_OLLAMA_MODEL", "qwen2.5:7b")
+WHISPER_MODEL = os.getenv("GLEAN_WHISPER_MODEL", "mlx-community/whisper-large-v3-turbo")
 # Browser to extract cookies from. Set to "chrome", "firefox", "safari", etc.
 # Needed for Bilibili/Douyin anti-scraping (HTTP 412).
-COOKIES_FROM_BROWSER = os.getenv("SHIJU_COOKIES_BROWSER", "chrome")
+COOKIES_FROM_BROWSER = os.getenv("GLEAN_COOKIES_BROWSER", "chrome")
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +225,7 @@ def fetch_subtitles(url: str, platform: str, language: str = "zh") -> Optional[S
 
     Returns None if no subtitle is available.
     """
-    with tempfile.TemporaryDirectory(prefix="shiju_sub_") as tmp_dir:
+    with tempfile.TemporaryDirectory(prefix="glean_sub_") as tmp_dir:
         output_template = str(Path(tmp_dir) / "sub")
         # Try to write subtitle only (no download)
         subtitle_languages = "zh.*,zh-Hans.*,zh-Hant.*,en.*" if language == "auto" else f"{language}.*,zh.*,en.*"

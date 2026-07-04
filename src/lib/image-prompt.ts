@@ -152,7 +152,7 @@ export function buildExtensionTarget(
   provider: ImageProvider,
   prompt: string,
 ): string {
-  return `${PROVIDER_HOME[provider]}#shiju=${encodeURIComponent(prompt)}`;
+  return `${PROVIDER_HOME[provider]}#glean=${encodeURIComponent(prompt)}`;
 }
 
 /**
@@ -181,8 +181,8 @@ export function buildSearchEngineUrl(
  * 通过 localStorage 持久化，按最近使用排序，最多保留若干个。       *
  * ------------------------------------------------------------------ */
 
-const RECENT_STYLE_KEY = "shiju:image:recentStyles";
-const RECENT_RATIO_KEY = "shiju:image:recentRatios";
+const RECENT_STYLE_KEY = "glean:image:recentStyles";
+const RECENT_RATIO_KEY = "glean:image:recentRatios";
 const RECENT_MAX = 5;
 
 function readRecent(key: string): string[] {

@@ -69,6 +69,6 @@ scripts/
 - 修改视觉规范时，先更新设计令牌或共享组件，再检查所有页面和 `/design-system`。
 - 提交前至少运行 `npm run lint` 和 `npm run build`。
 - 本地完整开发使用 `npm run dev:all`，不要只启动 Next.js 后误判 API 不可用。
-- 前端统一通过 `src/lib/api.ts` 调用 `127.0.0.1:8787/api`，可用 `NEXT_PUBLIC_SHIJU_API_URL` 覆盖；`/local-api` rewrite 保留给同源部署场景。
+- 前端统一通过 `src/lib/api.ts` 调用 `127.0.0.1:8787/api`，可用 `NEXT_PUBLIC_GLEAN_API_URL` 覆盖；`/local-api` rewrite 保留给同源部署场景。
 - 后端 schema、状态机和 API 字段需与 `docs/local-video-copy-backend-technical-design.md` 保持一致。
-- 当前默认 `SHIJU_PROCESSOR_MODE=real`。真实媒体处理走 `backend/app/pipeline.py` 与 `backend/app/article.py`；当依赖缺失或无法识别时，必须以失败任务的形式如实暴露错误信息，不得伪造识别结果。`SHIJU_PROCESSOR_MODE=demo`（即 `npm run dev:demo`）仅用于无依赖环境下跑通 UI 流程，结果必须明确标记为占位、不得呈现为真实识别。
+- 当前默认 `GLEAN_PROCESSOR_MODE=real`。真实媒体处理走 `backend/app/pipeline.py` 与 `backend/app/article.py`；当依赖缺失或无法识别时，必须以失败任务的形式如实暴露错误信息，不得伪造识别结果。`GLEAN_PROCESSOR_MODE=demo`（即 `npm run dev:demo`）仅用于无依赖环境下跑通 UI 流程，结果必须明确标记为占位、不得呈现为真实识别。

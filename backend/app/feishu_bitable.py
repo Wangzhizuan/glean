@@ -1,4 +1,4 @@
-"""Feishu Bitable (多维表格) sync for Shiju creator jobs.
+"""Feishu Bitable (多维表格) sync for Glean creator jobs.
 
 Wraps the locally-authenticated ``lark-cli base`` shortcuts to:
   1. create a new Base with a pre-built schema (``+base-create``),
@@ -23,7 +23,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("shiju.feishu_bitable")
+logger = logging.getLogger("glean.feishu_bitable")
 
 # Column order is the single source of truth for both schema and rows.
 COLUMNS: List[str] = [

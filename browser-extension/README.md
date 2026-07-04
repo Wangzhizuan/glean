@@ -6,8 +6,8 @@
 ## 工作原理
 
 1. 网页侧把完整 prompt 经 `encodeURIComponent` 放进目标平台 URL 的 **hash** 部分：
-   - `https://chatgpt.com/#shiju=<prompt>`
-   - `https://gemini.google.com/app#shiju=<prompt>`
+   - `https://chatgpt.com/#glean=<prompt>`
+   - `https://gemini.google.com/app#glean=<prompt>`
    - hash 不会发送到服务器，因此**不受 HTTP 431 请求头长度限制**（彻底解决长文本问题）。
 2. 本扩展的 content script 在对应官网页面读取 hash，等输入框出现 → 填入 → 自动点「发送」。
 

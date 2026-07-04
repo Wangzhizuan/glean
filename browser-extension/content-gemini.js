@@ -2,14 +2,14 @@
  * 拾句 · Gemini 自动发送 content script
  *
  * Gemini 官网原生不支持 ?q= 预填，这里同样走 URL hash 传 prompt：
- *   gemini.google.com/app#shiju=<encoded>
+ *   gemini.google.com/app#glean=<encoded>
  * content script 读取后填入 Gemini 的富文本输入框（rich-textarea / Quill），
  * 等发送按钮可用再点击。
  */
 (function () {
   "use strict";
 
-  const FLAG = "shiju=";
+  const FLAG = "glean=";
 
   function readPromptFromHash() {
     const hash = location.hash || "";

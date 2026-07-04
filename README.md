@@ -1,4 +1,4 @@
-# 拾句
+# 拾句 (glean)
 
 本地视频文案提取工具。前端使用 Next.js，后端使用 FastAPI + SQLite。
 
@@ -46,7 +46,7 @@ npm run backend
 npm run dev
 ```
 
-后端仅监听 `127.0.0.1:8787`，运行数据默认保存在 `.data/shiju.db`。
+后端仅监听 `127.0.0.1:8787`，运行数据默认保存在 `.data/glean.db`。
 
 前端默认连接 `http://127.0.0.1:8787/api`。可通过
-`NEXT_PUBLIC_SHIJU_API_URL` 覆盖后端地址。
+`NEXT_PUBLIC_GLEAN_API_URL` 覆盖后端地址。

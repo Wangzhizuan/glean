@@ -1,1 +1,1 @@
-"""Shiju local backend."""
+"""Glean local backend."""

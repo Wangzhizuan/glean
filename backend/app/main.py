@@ -23,9 +23,9 @@ from pydantic import BaseModel, Field
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-DATA_DIR = Path(os.getenv("SHIJU_DATA_DIR", ROOT_DIR / ".data")).expanduser()
-DB_PATH = DATA_DIR / "shiju.db"
-PROCESSOR_MODE = os.getenv("SHIJU_PROCESSOR_MODE", "demo")
+DATA_DIR = Path(os.getenv("GLEAN_DATA_DIR", ROOT_DIR / ".data")).expanduser()
+DB_PATH = DATA_DIR / "glean.db"
+PROCESSOR_MODE = os.getenv("GLEAN_PROCESSOR_MODE", "demo")
 TERMINAL_STATUSES = {"completed", "cancelled", "failed"}
 ACTIVE_STATUSES = {
     "queued",
@@ -490,7 +490,7 @@ class Worker:
         self.thread: Optional[threading.Thread] = None
 
     def start(self) -> None:
-        self.thread = threading.Thread(target=self.run, daemon=True, name="shiju-worker")
+        self.thread = threading.Thread(target=self.run, daemon=True, name="glean-worker")
         self.thread.start()
 
     def stop(self) -> None:
@@ -710,7 +710,7 @@ class Worker:
                     (
                         make_id("gc"),
                         task_id,
-                        os.getenv("SHIJU_OLLAMA_MODEL", "qwen2.5:7b"),
+                        os.getenv("GLEAN_OLLAMA_MODEL", "qwen2.5:7b"),
                         json.dumps(summary_data, ensure_ascii=False),
                         utc_now(),
                     ),
@@ -725,7 +725,7 @@ class Worker:
                     (
                         make_id("gc"),
                         task_id,
-                        os.getenv("SHIJU_OLLAMA_MODEL", "qwen2.5:7b"),
+                        os.getenv("GLEAN_OLLAMA_MODEL", "qwen2.5:7b"),
                         json.dumps(quotes_data, ensure_ascii=False),
                         utc_now(),
                     ),
@@ -847,7 +847,7 @@ class Worker:
                     "conclusions": summary.conclusions,
                 }
             except Exception as e:  # noqa: BLE001
-                logger = __import__("logging").getLogger("shiju.article")
+                logger = __import__("logging").getLogger("glean.article")
                 logger.warning("article summary failed: %s", e)
             try:
                 quotes = generate_quotes(segments, article.title)
@@ -862,7 +862,7 @@ class Worker:
                     for q in quotes
                 ]
             except Exception as e:  # noqa: BLE001
-                logger = __import__("logging").getLogger("shiju.article")
+                logger = __import__("logging").getLogger("glean.article")
                 logger.warning("article quotes failed: %s", e)
         elif not ollama_ok:
             summary_data = {
@@ -942,7 +942,7 @@ class Worker:
                     (
                         make_id("gc"),
                         task_id,
-                        os.getenv("SHIJU_OLLAMA_MODEL", "qwen2.5:7b"),
+                        os.getenv("GLEAN_OLLAMA_MODEL", "qwen2.5:7b"),
                         json.dumps(summary_data, ensure_ascii=False),
                         utc_now(),
                     ),
@@ -957,7 +957,7 @@ class Worker:
                     (
                         make_id("gc"),
                         task_id,
-                        os.getenv("SHIJU_OLLAMA_MODEL", "qwen2.5:7b"),
+                        os.getenv("GLEAN_OLLAMA_MODEL", "qwen2.5:7b"),
                         json.dumps(quotes_data, ensure_ascii=False),
                         utc_now(),
                     ),
@@ -1695,7 +1695,7 @@ def export_task(task_id: str, format: str = Query("txt", pattern="^(txt|md|json)
         media_type=media_type,
         headers={
             "Content-Disposition": (
-                f"attachment; filename=shiju-export.{format}; "
+                f"attachment; filename=glean-export.{format}; "
                 f"filename*=UTF-8''{quote(filename)}"
             )
         },

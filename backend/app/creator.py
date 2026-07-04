@@ -1,4 +1,4 @@
-"""Douyin creator harvesting for Shiju.
+"""Douyin creator harvesting for Glean.
 
 Given a creator homepage URL (or a creator name), harvest the creator's
 video list together with engagement metrics by driving headless Chromium
@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-logger = logging.getLogger("shiju.creator")
+logger = logging.getLogger("glean.creator")
 
 DOUYIN_COOKIE_DOMAINS = ["douyin.com"]
 POST_API_MARKER = "aweme/v1/web/aweme/post/"

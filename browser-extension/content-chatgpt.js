@@ -3,14 +3,14 @@
  *
  * 触发约定（与网页侧 image-bridge.ts 保持一致）：
  *   1) 网页把完整 prompt 写入「拾句」自己域名下不可行（跨域 localStorage 不通），
- *      因此改为把 prompt 通过 URL hash 传递：chatgpt.com/?#shiju=<encoded>
+ *      因此改为把 prompt 通过 URL hash 传递：chatgpt.com/?#glean=<encoded>
  *      —— hash 不会发到服务器，绕开了 HTTP 431 的请求头长度限制。
  *   2) content script 读取 hash 里的 prompt，等输入框出现，填入并点发送。
  */
 (function () {
   "use strict";
 
-  const FLAG = "shiju=";
+  const FLAG = "glean=";
 
   function readPromptFromHash() {
     const hash = location.hash || "";

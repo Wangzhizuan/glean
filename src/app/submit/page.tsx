@@ -84,7 +84,7 @@ export default function SubmitPage() {
     setSubmitting(true);
     try {
       const batch = await createBatch(urls);
-      localStorage.setItem("shiju:lastBatchId", batch.batchId);
+      localStorage.setItem("glean:lastBatchId", batch.batchId);
       router.push(`/progress?batchId=${encodeURIComponent(batch.batchId)}`);
     } catch (error) {
       showToast(

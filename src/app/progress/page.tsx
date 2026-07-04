@@ -57,7 +57,7 @@ function ProgressContent() {
   const queryBatchId = searchParams.get("batchId");
   const storedBatchId = useSyncExternalStore(
     subscribeToLastBatchId,
-    () => localStorage.getItem("shiju:lastBatchId"),
+    () => localStorage.getItem("glean:lastBatchId"),
     () => null,
   );
   const [fallbackBatchId, setFallbackBatchId] = useState<string | null>(null);
