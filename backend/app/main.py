@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -556,6 +557,8 @@ class Worker:
             kind = row["kind"] if row else "video"
         if kind == "article":
             self._process_article(task_id)
+        elif kind == "image_text":
+            self._process_image_text(task_id)
         else:
             self._process_real(task_id)
 
@@ -980,6 +983,214 @@ class Worker:
             )
             update_batch_counts(connection, batch_id)
 
+    def _process_image_text(self, task_id: str) -> None:
+        """Process a Douyin image-text post (图文帖).
+
+        These posts have no audio/video stream, so yt-dlp/whisper cannot apply.
+        The caption text was already harvested into ``tasks.title``; we treat it
+        as the body, optionally summarize via Ollama, and mark the task done —
+        instead of failing it like a broken video download.
+        """
+        from .pipeline import (
+            SubtitleSegment,
+            _check_ollama_available,
+            generate_quotes,
+            generate_summary,
+        )
+
+        with connect() as connection:
+            task = connection.execute(
+                "SELECT * FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            if not task:
+                return
+            batch_id = task["batch_id"]
+            url = task["source_url"]
+            body_text = (task["title"] or "").strip()
+
+        def push(stage: str, progress: float) -> None:
+            if not self.wait_if_paused(task_id):
+                raise RuntimeError("CANCELLED")
+            with connect() as conn:
+                current = conn.execute(
+                    "SELECT status FROM tasks WHERE id = ?", (task_id,)
+                ).fetchone()
+                if current and current["status"] == "cancelled":
+                    raise RuntimeError("CANCELLED")
+                conn.execute(
+                    """
+                    UPDATE tasks SET status = ?, stage_progress = 0.5,
+                      overall_progress = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (stage, progress, utc_now(), task_id),
+                )
+                conn.execute(
+                    "UPDATE batches SET updated_at = ? WHERE id = ?",
+                    (utc_now(), batch_id),
+                )
+
+        try:
+            push("extracting", 0.40)
+        except RuntimeError as e:
+            if "CANCELLED" in str(e):
+                return
+            raise
+
+        if not body_text:
+            # 图文帖也没有任何文字（纯图片、无文案）：如实标记失败，说明原因。
+            self.fail_task(
+                task_id,
+                "IMAGE_POST_NO_TEXT",
+                "这是一条图文帖，但没有可提取的文字文案（纯图片，无标题/正文）。",
+            )
+            return
+
+        # 标题取正文首行/首句，正文全文作为文案。
+        title = re.split(r"[。！？\n]", body_text, maxsplit=1)[0].strip()[:60] or body_text[:60]
+
+        segments: List[SubtitleSegment] = []
+        paragraphs = [p.strip() for p in re.split(r"\n{2,}", body_text) if p.strip()] or [body_text]
+        idx = 0
+        for paragraph in paragraphs:
+            if len(paragraph) <= 240:
+                segments.append(SubtitleSegment(index=idx, start_ms=0, end_ms=0, text=paragraph))
+                idx += 1
+                continue
+            for offset in range(0, len(paragraph), 200):
+                segments.append(
+                    SubtitleSegment(index=idx, start_ms=0, end_ms=0, text=paragraph[offset:offset + 200])
+                )
+                idx += 1
+
+        push("summarizing", 0.92)
+        summary_data: Dict[str, Any] = {}
+        quotes_data: List[Dict[str, Any]] = []
+        ollama_ok = _check_ollama_available()
+        if ollama_ok:
+            try:
+                summary = generate_summary(body_text, title)
+                summary_data = {
+                    "overview": summary.overview,
+                    "coreThesis": summary.core_thesis,
+                    "detailedSummary": summary.detailed_summary,
+                    "keyPoints": summary.key_points,
+                    "contentStructure": summary.content_structure,
+                    "actionItems": summary.action_items,
+                    "targetAudience": summary.target_audience,
+                    "terms": summary.terms,
+                    "conclusions": summary.conclusions,
+                }
+            except Exception as e:  # noqa: BLE001
+                logging.getLogger("glean.creator").warning("image-text summary failed: %s", e)
+            try:
+                quotes = generate_quotes(segments, title)
+                quotes_data = [
+                    {
+                        "text": q.text,
+                        "startMs": 0,
+                        "endMs": 0,
+                        "sourceSegmentIds": q.source_segment_ids,
+                        "isPolished": q.is_polished,
+                    }
+                    for q in quotes
+                ]
+            except Exception as e:  # noqa: BLE001
+                logging.getLogger("glean.creator").warning("image-text quotes failed: %s", e)
+
+        word_count = len(re.sub(r"\s+", "", body_text))
+        segments_data = [
+            {"index": s.index, "startMs": 0, "endMs": 0, "text": s.text} for s in segments
+        ]
+        result = {
+            "taskId": task_id,
+            "metadata": {
+                "kind": "image_text",
+                "platform": "douyin",
+                "platformLabel": PLATFORM_LABELS.get("douyin", "douyin"),
+                "title": title,
+                "author": None,
+                "durationMs": 0,
+                "publishedAt": None,
+                "generatedAt": utc_now(),
+                "sourceUrl": url,
+            },
+            "transcript": {
+                "source": "douyin_image_text",
+                "language": "zh",
+                "wordCount": word_count,
+                "plainText": body_text,
+                "segments": segments_data,
+            },
+            "summary": summary_data,
+            "quotes": quotes_data,
+            "processor": {"mode": "real", "notice": "图文帖：文案取自帖子正文，无音视频转写。"},
+        }
+
+        with connect() as connection:
+            connection.execute(
+                "INSERT OR REPLACE INTO results(task_id, result_json, created_at) VALUES (?, ?, ?)",
+                (task_id, json.dumps(result, ensure_ascii=False), utc_now()),
+            )
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO transcripts(id, task_id, source, language, raw_text,
+                  readable_text, segments_json, word_count, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    make_id("tr"),
+                    task_id,
+                    "douyin_image_text",
+                    "zh",
+                    body_text,
+                    body_text,
+                    json.dumps(segments_data, ensure_ascii=False),
+                    word_count,
+                    utc_now(),
+                ),
+            )
+            if summary_data:
+                connection.execute(
+                    """
+                    INSERT INTO generated_contents(id, task_id, type, model, prompt_version,
+                      content_json, created_at)
+                    VALUES (?, ?, 'summary', ?, 'v2-rich-zh', ?, ?)
+                    """,
+                    (
+                        make_id("gc"),
+                        task_id,
+                        os.getenv("GLEAN_OLLAMA_MODEL", "qwen2.5:7b"),
+                        json.dumps(summary_data, ensure_ascii=False),
+                        utc_now(),
+                    ),
+                )
+            if quotes_data:
+                connection.execute(
+                    """
+                    INSERT INTO generated_contents(id, task_id, type, model, prompt_version,
+                      content_json, created_at)
+                    VALUES (?, ?, 'quotes', ?, 'v2-12-plus-zh', ?, ?)
+                    """,
+                    (
+                        make_id("gc"),
+                        task_id,
+                        os.getenv("GLEAN_OLLAMA_MODEL", "qwen2.5:7b"),
+                        json.dumps(quotes_data, ensure_ascii=False),
+                        utc_now(),
+                    ),
+                )
+            connection.execute(
+                """
+                UPDATE tasks SET status = 'completed', stage_progress = 1,
+                  overall_progress = 1, duration_ms = 0,
+                  canonical_url = source_url, updated_at = ?, completed_at = ?
+                WHERE id = ?
+                """,
+                (utc_now(), utc_now(), task_id),
+            )
+            update_batch_counts(connection, batch_id)
+
     def _process_demo(self, task_id: str) -> None:
         """Demo processing with simulated delays."""
         for stage, overall_progress, duration in STAGES:
@@ -1146,14 +1357,26 @@ class Worker:
             )
             for video in harvest.videos:
                 task_id = make_id("tsk")
+                # 图文帖没有音视频流，走纯文案管线（kind=image_text），
+                # 并把已抓到的文案直接写进 task.title 供后续处理复用。
+                task_kind = "image_text" if video.is_image_post else "video"
                 connection.execute(
                     """
                     INSERT INTO tasks(
-                      id, batch_id, source_url, platform, kind, status, options_json,
-                      created_at, updated_at
-                    ) VALUES (?, ?, ?, 'douyin', 'video', 'queued', ?, ?, ?)
+                      id, batch_id, source_url, platform, kind, status, title,
+                      options_json, created_at, updated_at
+                    ) VALUES (?, ?, ?, 'douyin', ?, 'queued', ?, ?, ?, ?)
                     """,
-                    (task_id, job_id, video.video_url, options_json, created_at, created_at),
+                    (
+                        task_id,
+                        job_id,
+                        video.video_url,
+                        task_kind,
+                        video.title,
+                        options_json,
+                        created_at,
+                        created_at,
+                    ),
                 )
                 connection.execute(
                     """
@@ -1766,6 +1989,10 @@ def creator_video_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
     if stored in ("pending", "queued") and task_status:
         if task_status in ACTIVE_STATUSES and task_status != "queued":
             display_status = "processing"
+    keys = row.keys()
+    task_error_code = row["task_error_code"] if "task_error_code" in keys else None
+    task_error_message = row["task_error_message"] if "task_error_message" in keys else None
+    task_kind = row["task_kind"] if "task_kind" in keys else None
     return {
         "id": row["id"],
         "awemeId": row["aweme_id"],
@@ -1779,9 +2006,15 @@ def creator_video_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
         "playCount": row["play_count"],
         "coverUrl": row["cover_url"],
         "publishedAt": row["published_at"],
-        "tags": _parse_tags(row["tags_json"] if "tags_json" in row.keys() else None),
+        "tags": _parse_tags(row["tags_json"] if "tags_json" in keys else None),
         "taskId": row["task_id"],
         "transcribeStatus": display_status,
+        "kind": task_kind,
+        "error": (
+            {"code": task_error_code, "message": task_error_message}
+            if task_error_code
+            else None
+        ),
     }
 
 
@@ -1794,7 +2027,10 @@ def get_creator_job_payload(job_id: str) -> Dict[str, Any]:
             raise HTTPException(404, detail={"code": "NOT_FOUND", "message": "博主任务不存在"})
         videos = connection.execute(
             """
-            SELECT cv.*, t.status AS task_status
+            SELECT cv.*, t.status AS task_status,
+                   t.kind AS task_kind,
+                   t.error_code AS task_error_code,
+                   t.error_message AS task_error_message
             FROM creator_videos cv
             LEFT JOIN tasks t ON t.id = cv.task_id
             WHERE cv.creator_job_id = ? ORDER BY cv.created_at
@@ -1903,16 +2139,29 @@ def retry_creator_job(job_id: str) -> Dict[str, Any]:
                 (utc_now(), job_id),
             )
         else:
-            # Re-queue failed videos' tasks.
+            # Re-queue failed videos' tasks. Reclassify likely 图文帖
+            # (no duration + has caption text) to the text-only pipeline so
+            # they stop failing on a video download that can never succeed.
             failed_videos = connection.execute(
-                "SELECT task_id FROM creator_videos WHERE creator_job_id = ? AND transcribe_status = 'failed'",
+                """
+                SELECT id, task_id, duration_ms, title
+                FROM creator_videos
+                WHERE creator_job_id = ? AND transcribe_status = 'failed'
+                """,
                 (job_id,),
             ).fetchall()
             for video in failed_videos:
                 if video["task_id"]:
+                    has_text = bool((video["title"] or "").strip())
+                    is_image_post = has_text and not video["duration_ms"]
+                    new_kind = "image_text" if is_image_post else "video"
                     connection.execute(
-                        "UPDATE tasks SET status = 'queued', error_code = NULL, error_message = NULL, updated_at = ? WHERE id = ?",
-                        (utc_now(), video["task_id"]),
+                        """
+                        UPDATE tasks SET status = 'queued', kind = ?,
+                          error_code = NULL, error_message = NULL, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (new_kind, utc_now(), video["task_id"]),
                     )
                     connection.execute(
                         "UPDATE creator_videos SET transcribe_status = 'queued', updated_at = ? WHERE task_id = ?",

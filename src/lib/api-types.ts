@@ -185,6 +185,8 @@ export interface CreatorVideo {
   tags?: string[];
   taskId: string | null;
   transcribeStatus: CreatorVideoStatus;
+  kind?: string | null;
+  error?: { code: string; message: string } | null;
 }
 
 export interface CreatorJob {

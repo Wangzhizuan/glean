@@ -54,6 +54,9 @@ class CreatorVideo:
     published_at: Optional[str] = None  # ISO date string
     cover_url: Optional[str] = None
     tags: List[str] = field(default_factory=list)
+    # 图文帖（一张/多张图片 + 文字），没有可播放的音视频流。
+    # 这类内容的文案就是 desc，直接复用即可，不需要走 yt-dlp/whisper。
+    is_image_post: bool = False
 
 
 @dataclass
@@ -189,6 +192,15 @@ def _parse_aweme(aweme: Dict[str, Any]) -> Optional[CreatorVideo]:
     video = aweme.get("video") or {}
     cover = (video.get("cover") or {}).get("url_list") or []
     desc = (aweme.get("desc") or "").strip()
+    # 图文帖判定：抖音图文有 images 列表，且 aweme_type 常为 68。
+    # 这类内容没有可播放的音视频流，标题/正文就写在 desc 里。
+    images = aweme.get("images") or []
+    is_image_post = bool(images) or aweme.get("aweme_type") == 68
+    # 图文帖没有视频封面时，回退到第一张图片作为封面。
+    cover_url = cover[0] if cover else None
+    if not cover_url and images:
+        image_urls = (images[0].get("url_list") if isinstance(images[0], dict) else None) or []
+        cover_url = image_urls[0] if image_urls else None
     published_at: Optional[str] = None
     create_time = aweme.get("create_time")
     if create_time:
@@ -211,8 +223,9 @@ def _parse_aweme(aweme: Dict[str, Any]) -> Optional[CreatorVideo]:
         play_count=stats.get("play_count"),
         duration_ms=video.get("duration"),
         published_at=published_at,
-        cover_url=cover[0] if cover else None,
+        cover_url=cover_url,
         tags=_extract_tags(aweme, desc),
+        is_image_post=is_image_post,
     )
 
 

@@ -518,6 +518,14 @@ function CreatorVideoRow({ video }: { video: CreatorVideo }) {
           {statusLabel}
           {video.transcribeStatus === "processing" && " ⋯"}
         </span>
+        {video.kind === "image_text" && (
+          <span className="creator-table__kind meta">图文</span>
+        )}
+        {video.transcribeStatus === "failed" && video.error?.message && (
+          <div className="creator-table__error" title={video.error.message}>
+            {video.error.message}
+          </div>
+        )}
       </td>
     </tr>
   );
